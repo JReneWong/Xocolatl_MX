@@ -1,0 +1,60 @@
+# Data — never commit, each teammate downloads independently
+data/
+InitialData/
+*.fastq.gz
+*.vcf
+*.vcf.gz
+*.vcf.gz.tbi
+*.bam
+*.bai
+*.cram
+*.fasta
+*.fa
+*.fa.fai
+references/
+
+# Container images — rebuild locally, don't version large binaries
+*.sif
+*.img
+
+# Challenge/organizer materials tied to the dataset — treat like input data,
+# each teammate keeps their own local copy instead of versioning it.
+Challenge_*.docx
+
+# Top-level results/ — final deliverable rollups only (small tables/figures
+# for the write-up), not per-module working output. See pipeline/ below for
+# that.
+results/*.png
+results/*.tsv
+!results/.gitkeep
+
+# pipeline/00N_Module/data — these are symlinks (just a path string), not
+# the data itself, so they ARE tracked; the real files they point at are
+# already excluded above (InitialData/, references/).
+
+# pipeline/00N_Module/results — ignore heavy/derived formats by extension
+# rather than the whole directory, so small QC reports (FastQC/MultiQC
+# html) and every manifest_*.yaml stay in git as the run record.
+pipeline/*/results/*.fastq.gz
+pipeline/*/results/*.bam
+pipeline/*/results/*.bai
+pipeline/*/results/*.sam
+pipeline/*/results/*.cram
+pipeline/*/results/*.vcf.gz
+pipeline/*/results/*.vcf.gz.tbi
+!pipeline/*/results/manifest_*.yaml
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+env/
+
+# OS
+.DS_Store
+._*
+
+# Editors
+.vscode/
+.idea/
