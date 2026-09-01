@@ -1,0 +1,130 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+%labels
+    Author your-team
+    Purpose "Rare Disease, Real Kid - MVA Hackathon 2026"
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        wget curl ca-certificates bzip2 git \
+        build-essential zlib1g-dev libbz2-dev liblzma-dev libcurl4-openssl-dev \
+        libssl-dev libncurses5-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+    # --- micromamba: lightweight conda-compatible package manager ---
+    # Arch-detected: this def gets built on whatever the VM's arch is
+    # (aarch64 on Apple Silicon, x86_64 on Intel Macs) — hardcoding linux-64
+    # here breaks the build with "Exec format error" on Apple Silicon.
+    case "$(uname -m)" in
+        aarch64) MICROMAMBA_ARCH=linux-aarch64 ;;
+        x86_64)  MICROMAMBA_ARCH=linux-64 ;;
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+    esac
+    curl -Ls "https://micro.mamba.pm/api/micromamba/${MICROMAMBA_ARCH}/latest" | tar -xvj bin/micromamba
+    mv bin/micromamba /usr/local/bin/micromamba
+
+    # --- Env 1: core CLI tools + Python (alignment, variant calling, QC, pipeline) ---
+    # Kept separate from the R/Bioconductor and VEP envs below so a solver
+    # conflict or a future change on one side never forces re-resolving the
+    # others.
+    micromamba create -y -p /opt/env -c conda-forge -c bioconda \
+        python=3.11 \
+        fastqc \
+        multiqc \
+        bwa \
+        samtools \
+        picard \
+        bcftools \
+        htslib \
+        tabix \
+        gatk4 \
+        nextflow \
+        pysam \
+        pandas \
+        numpy \
+        matplotlib
+
+    # --- Env 2: R / Bioconductor (data processing, plotting, GRanges) ---
+    micromamba create -y -p /opt/r-env -c conda-forge -c bioconda \
+        r-base \
+        r-ggplot2 \
+        bioconductor-genomicranges
+
+    # --- Env 3: Ensembl VEP, isolated on its own ---
+    # VEP's bioconda dependency chain pulls in perl-bio-samtools, which hard-
+    # pins `samtools 0.1.19` (a 2011-era release) — installed alongside a
+    # modern samtools/bcftools/htslib, that pin silently downgrades the
+    # `samtools` binary everyone else expects. Keeping VEP in its own env
+    # means that ancient pin never touches /opt/env's samtools.
+    # perl-dbi/perl-dbd-mysql: not a hard dep of the bioconda ensembl-vep
+    # package, but VEP's Registry code does `use DBI` unconditionally at
+    # load time even in --offline/cache mode, so without it `vep` fails to
+    # even start (known upstream/bioconda packaging gap).
+    micromamba create -y -p /opt/vep-env -c conda-forge -c bioconda \
+        ensembl-vep \
+        perl-dbi \
+        perl-dbd-mysql
+
+    micromamba clean -a -y
+
+    # --- Thin wrappers for the VEP entry points, instead of putting
+    # /opt/vep-env/bin on PATH ---
+    # ensembl-vep's bioconda dependency chain (via perl-bioperl-run) drags in
+    # a huge phylogenetics toolkit — including its OWN ancient samtools
+    # 0.1.19, mafft, muscle, raxml, a bundled mysql-server, etc. Exposing all
+    # of /opt/vep-env/bin on PATH would shadow /opt/env's modern samtools
+    # (and possibly other tools) with these. Since each VEP script's shebang
+    # is a bare `#!/usr/bin/env perl`, we instead wrap just the handful of
+    # actual VEP entry points so only *they* see vep-env's perl (the one
+    # with DBI installed) on PATH, without ever polluting the global PATH.
+    for bin in vep filter_vep variant_recoder haplo vep_install; do
+        cat > "/usr/local/bin/${bin}" <<EOF
+#!/bin/bash
+export PATH="/opt/vep-env/bin:\$PATH"
+exec /opt/vep-env/bin/${bin} "\$@"
+EOF
+        chmod +x "/usr/local/bin/${bin}"
+    done
+
+    # --- Snapshot exact resolved versions into the image itself ---
+    # (also copied out to the repo as docs/software_versions.txt after build —
+    # see scripts/record_versions.sh)
+    {
+        echo "# Software versions baked into this image"
+        echo "# Recorded at build time: $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+        echo ""
+        echo "## /opt/env (CLI tools + Python)"
+        /usr/local/bin/micromamba list -p /opt/env
+        echo ""
+        echo "## /opt/r-env (R / Bioconductor)"
+        /usr/local/bin/micromamba list -p /opt/r-env
+        echo ""
+        echo "## /opt/vep-env (Ensembl VEP)"
+        /usr/local/bin/micromamba list -p /opt/vep-env
+    } > /opt/software_versions.txt
+
+%environment
+    # /opt/vep-env/bin is deliberately NOT on PATH — see the wrapper-script
+    # comment above. /opt/r-env comes before /opt/env because /opt/env also
+    # carries its own bundled `R` (a transitive dependency of another
+    # bioconda package); since some R-using tools resolve `Rscript` off
+    # PATH, putting the single-purpose R env first guarantees the real one
+    # always wins.
+    export PATH=/opt/r-env/bin:/opt/env/bin:$PATH
+
+%runscript
+    echo "Rare Disease Hackathon container. Tools: fastqc, multiqc, bwa, samtools,"
+    echo "picard, bcftools, gatk4, ensembl-vep, nextflow, python(pysam/pandas), R(ggplot2/GenomicRanges)."
+    exec "$@"
+
+%help
+    Build:
+        apptainer build hackathon.sif hackathon.def
+    Run a shell inside it:
+        apptainer shell hackathon.sif
+    Run a single command:
+        apptainer exec hackathon.sif samtools --version
+    See exact installed versions:
+        apptainer exec hackathon.sif cat /opt/software_versions.txt
