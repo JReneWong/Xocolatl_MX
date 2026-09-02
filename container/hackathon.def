@@ -5,6 +5,9 @@ From: ubuntu:22.04
     Author your-team
     Purpose "Rare Disease, Real Kid - MVA Hackathon 2026"
 
+%files
+    container/*.yaml /opt
+
 %post
     export DEBIAN_FRONTEND=noninteractive
     apt-get update && apt-get install -y --no-install-recommends \
@@ -29,28 +32,10 @@ From: ubuntu:22.04
     # Kept separate from the R/Bioconductor and VEP envs below so a solver
     # conflict or a future change on one side never forces re-resolving the
     # others.
-    micromamba create -y -p /opt/env -c conda-forge -c bioconda \
-        python=3.11 \
-        fastqc \
-        multiqc \
-        bwa \
-        samtools \
-        picard \
-        bcftools \
-        htslib \
-        tabix \
-        gatk4 \
-        nextflow \
-        pysam \
-        pandas \
-        numpy \
-        matplotlib
+    micromamba create -y -p /opt/env -f /opt/env.yaml
 
     # --- Env 2: R / Bioconductor (data processing, plotting, GRanges) ---
-    micromamba create -y -p /opt/r-env -c conda-forge -c bioconda \
-        r-base \
-        r-ggplot2 \
-        bioconductor-genomicranges
+    micromamba create -y -p /opt/r-env -f /opt/r-env.yaml
 
     # --- Env 3: Ensembl VEP, isolated on its own ---
     # VEP's bioconda dependency chain pulls in perl-bio-samtools, which hard-
@@ -62,10 +47,7 @@ From: ubuntu:22.04
     # package, but VEP's Registry code does `use DBI` unconditionally at
     # load time even in --offline/cache mode, so without it `vep` fails to
     # even start (known upstream/bioconda packaging gap).
-    micromamba create -y -p /opt/vep-env -c conda-forge -c bioconda \
-        ensembl-vep \
-        perl-dbi \
-        perl-dbd-mysql
+    micromamba create -y -p /opt/vep-env -f /opt/vep-env.yaml
 
     micromamba clean -a -y
 
