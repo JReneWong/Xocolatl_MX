@@ -1,0 +1,7 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - ensembl-vep=116.1
+  - perl-dbd-mysql=5.013
+  - perl-dbi=1.651

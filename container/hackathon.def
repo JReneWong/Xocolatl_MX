@@ -5,6 +5,9 @@ From: ubuntu:22.04
     Author your-team
     Purpose "Rare Disease, Real Kid - MVA Hackathon 2026"
 
+%files
+    container/*.yaml /opt
+
 %post
     export DEBIAN_FRONTEND=noninteractive
     # unzip: needed to pull gatkPythonPackageArchive.zip out of GATK's
@@ -31,61 +34,7 @@ From: ubuntu:22.04
     # Kept separate from the R/Bioconductor and VEP envs below so a solver
     # conflict or a future change on one side never forces re-resolving the
     # others.
-    #
-    # gatk4 pinned (matches docs/software_versions.txt as of the last
-    # build) now that pytorch is in this same env: adding a big ML
-    # framework gives the solver a much harder dependency problem, and an
-    # unpinned gatk4 could in theory get re-resolved to a different build
-    # as a side effect. Pinning guarantees NVScoreVariants runs under the
-    # identical GATK build that already produced 004_HaplotypeCaller's
-    # output.
-    #
-    # pytorch + pytorch-lightning + numpy pinned, and biopython/pysam
-    # added: required by `gatk NVScoreVariants` — CNNScoreVariants (the
-    # tool originally proposed) was removed from GATK as of 4.6.1.0;
-    # GATK's own error message points at NVScoreVariants as the direct
-    # replacement ("produces virtually identical results"), but it's a
-    # PyTorch-based CNN, not TensorFlow. GATK4's Python-backed tools shell
-    # out to a bundled script at runtime using whatever `python` is first
-    # on PATH, which is this env's (see %environment below), so pytorch
-    # has to live here rather than in its own isolated env for GATK to
-    # find it.
-    #
-    # Versions pinned to match Broad's own scripts/gatkcondaenv.yml.template
-    # for 4.6.2.0 exactly (numpy=1.26.2, pytorch=2.1.0, pytorch-lightning=
-    # 2.4.0) rather than left to the solver: this isn't just "a new
-    # package", it's matching the exact environment GATK's bundled Python
-    # code (see below) was built and tested against. numpy in particular
-    # matters — pytorch 2.1.0 was built against numpy's 1.x ABI, and an
-    # unpinned numpy resolves to 2.x here, which risks silent breakage
-    # rather than a clean error. `pytorch-cpu` (conda-forge's CPU-only
-    # metapackage, not the `pytorch` channel's `cpuonly` — that package
-    # isn't available from conda-forge/bioconda, which is all we use):
-    # this container has no GPU passthrough set up, and an unconstrained
-    # pytorch install pulls in the full CUDA toolkit (several extra GB)
-    # for no benefit here. Unlike VEP's samtools pin,
-    # there's no known hard version conflict between this ML stack and
-    # this env's other packages, so no isolation trick is needed here.
-    micromamba create -y -p /opt/env -c conda-forge -c bioconda \
-        python=3.11 \
-        pip \
-        fastqc \
-        multiqc \
-        bwa \
-        samtools \
-        picard \
-        bcftools \
-        htslib \
-        tabix \
-        gatk4=4.6.2.0 \
-        numpy=1.26.2 \
-        pytorch-cpu=2.1.0 \
-        pytorch-lightning=2.4.0 \
-        biopython \
-        nextflow \
-        pysam \
-        pandas \
-        matplotlib
+    micromamba create -y -p /opt/env -f /opt/env.yaml
 
     # --- GATK's own bundled Python package, for NVScoreVariants ---
     # The actual Python module NVScoreVariants imports at runtime
@@ -109,10 +58,7 @@ From: ubuntu:22.04
     rm -f /tmp/gatk-4.6.2.0.zip /tmp/gatkPythonPackageArchive.zip
 
     # --- Env 2: R / Bioconductor (data processing, plotting, GRanges) ---
-    micromamba create -y -p /opt/r-env -c conda-forge -c bioconda \
-        r-base \
-        r-ggplot2 \
-        bioconductor-genomicranges
+    micromamba create -y -p /opt/r-env -f /opt/r-env.yaml
 
     # --- Env 3: Ensembl VEP, isolated on its own ---
     # VEP's bioconda dependency chain pulls in perl-bio-samtools, which hard-
@@ -124,10 +70,7 @@ From: ubuntu:22.04
     # package, but VEP's Registry code does `use DBI` unconditionally at
     # load time even in --offline/cache mode, so without it `vep` fails to
     # even start (known upstream/bioconda packaging gap).
-    micromamba create -y -p /opt/vep-env -c conda-forge -c bioconda \
-        ensembl-vep \
-        perl-dbi \
-        perl-dbd-mysql
+    micromamba create -y -p /opt/vep-env -f /opt/vep-env.yaml
 
     micromamba clean -a -y
 

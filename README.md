@@ -5,6 +5,17 @@ Submission window:
 
 ## Setup
 
+### 1. Clone the repo
+
+Clone the repo and move into its directory
+
+```bash
+git clone git@github.com:JReneWong/Xocolatl_MX.git
+cd Xocolatl_MX
+```
+
+### (Optional) Setup VM
+
 We use an Apptainer image to run analysis on the provided dataset.
 
 Apptainer only runs on Linux, if you're using MacOS you can follow the next steps to setup a Linux VM.
@@ -40,7 +51,7 @@ limactl start hackathon
 
 </details>
 
-## 2. Install Apptainer
+### 2. Install Apptainer
 
 ```bash
 sudo apt update
@@ -51,7 +62,7 @@ sudo apt install -y apptainer
 apptainer --version
 ```
 
-## 3. Build the container image
+### 3. Build the container image
 
 Run the command from the directory you want the image to be created
 
@@ -61,28 +72,13 @@ apptainer build container/hackathon.sif container/hackathon.def
 
 This builds a `.sif` image. Building can take a while and use a fair bit of RAM/CPU.
 
-### What's inside the image
+#### What's inside the image
 
-Two separate conda/micromamba environments (kept apart so a solver conflict
-or a future package change on one side never forces re-resolving the other),
-both added to `PATH`:
+Three micromamba/conda environments. Environment dependencies are defined in the yaml files under `container/`.
 
-- **`/opt/env`** — alignment, variant calling, QC, pipeline: `fastqc`,
-  `multiqc`, `bwa`, `samtools`, `picard`, `bcftools`, `gatk4`, `ensembl-vep`,
-  `nextflow`, plus `python=3.11` with `pysam`/`pandas`/`numpy`/`matplotlib`.
-- **`/opt/r-env`** — `r-base`, `r-ggplot2`, `bioconductor-genomicranges`.
-
-Exact resolved versions aren't hand-pinned above (only `python=3.11` is) —
-conda's solver picks a mutually-compatible set at build time, and the real
-answer to "what version of X is installed" always lives in
-[`docs/software_versions.txt`](docs/software_versions.txt), generated fresh
-after every build (see below) rather than guessed ahead of time.
-
-Need a different version of something, or a new tool entirely? Edit the
-package list (and pin a version, e.g. `gatk4=4.5.0.0`) in
-`container/hackathon.def`, then rebuild — nothing is ever patched in place,
-so a bad rebuild can't leave you with a half-broken environment; the old
-`.sif` is untouched until the new build succeeds.
+- **`/opt/env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline. Added to `PATH`.
+- **`/opt/r-env`** — R environment. Added to `PATH`.
+- **`/opt/vep-env`** - Ensembl VEP.
 
 After building, capture the version manifest into git-tracked docs:
 
@@ -90,21 +86,13 @@ After building, capture the version manifest into git-tracked docs:
 bash scripts/record_versions.sh
 ```
 
-## 4. Clone the git repo
-
-```bash
-git clone git@github.com:JReneWong/Xocolatl_MX.git
-```
-
-**Important:** never commit anything from `data/`, `.sif` images, or large intermediate files — see `.gitignore`.
-
-## 5. Download the challenge data (do this when ready, it's ~85GB)
+### 4. Download the challenge data (~85GB)
 
 ```bash
 bash scripts/download_data.sh
 ```
 
-## 5b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
+## 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
 
 Everything here is pinned to **GRCh38** — confirm this matches the challenge
 dataset's build before running (check the HF dataset card/rules); dbSNP,
