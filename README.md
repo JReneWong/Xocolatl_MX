@@ -16,9 +16,11 @@ cd Xocolatl_MX
 
 ### (Optional) Setup VM
 
-We use an Apptainer image to run analysis on the provided dataset.
+We use a Nextflow pipeline to run analysis on the provided dataset.
 
-Apptainer only runs on Linux, if you're using MacOS you can follow the next steps to setup a Linux VM.
+The pipeline can either use Apptainer or micromamba/conda to handle environments.
+
+If using Apptainer, consider it only runs on Linux. If you're using MacOS you can follow the next steps to setup a Linux VM.
 
 <details>
 <summary>Create a Linux VM with MacOS</summary>
@@ -39,7 +41,7 @@ limactl start --name=hackathon lima/hackathon-vm.yaml
 limactl shell hackathon
 ```
 
-You should now be inside an Ubuntu VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
+You should now be inside an Ubuntu VM, perform the rest of the steps within the VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
 
 If you need to resize the VM you can do so by stopping the VM, editing the config yaml file and starting it again.
 
@@ -51,7 +53,18 @@ limactl start hackathon
 
 </details>
 
-### 2. Install Apptainer
+### 2. Install Nextflow
+
+Follow [seqera's docs on installing Nextflow](https://docs.seqera.io/nextflow/install). 
+
+### 3. Environment setup
+
+Use either Apptainer or micromamba/conda
+
+<details>
+<summary>Aptainer</summary>
+
+Install apptainer
 
 ```bash
 sudo apt update
@@ -62,9 +75,7 @@ sudo apt install -y apptainer
 apptainer --version
 ```
 
-### 3. Build the container image
-
-Run the command from the directory you want the image to be created
+Run the command from the directory you want the image to be created at
 
 ```shell
 apptainer build container/hackathon.sif container/hackathon.def
@@ -72,19 +83,34 @@ apptainer build container/hackathon.sif container/hackathon.def
 
 This builds a `.sif` image. Building can take a while and use a fair bit of RAM/CPU.
 
-#### What's inside the image
-
-Three micromamba/conda environments. Environment dependencies are defined in the yaml files under `container/`.
+The image contains three micromamba environments. Environment dependencies are defined in the yaml files under `container/`.
 
 - **`/opt/env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline. Added to `PATH`.
 - **`/opt/r-env`** — R environment. Added to `PATH`.
 - **`/opt/vep-env`** - Ensembl VEP.
 
-After building, capture the version manifest into git-tracked docs:
+After building, capture the version manifest:
 
 ```bash
 bash scripts/record_versions.sh
 ```
+</details>
+
+<details>
+<summary>Conda/Micromamba</summary>
+
+Follow either [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)'s (recommended) or [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)'s docs on installation.
+
+You do not have to create the environments as Nextflow will handle them as needed. You could however create them and then configure Nextflow to use existing environments.
+
+Environment dependencies are defined in the yaml files under `container/`.
+
+- **`env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline.
+- **`r-env`** — R environment.
+- **`vep-env`** - Ensembl VEP.
+
+</details>
+
 
 ### 4. Download the challenge data (~85GB)
 
@@ -92,7 +118,7 @@ bash scripts/record_versions.sh
 bash scripts/download_data.sh
 ```
 
-## 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
+### 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
 
 Everything here is pinned to **GRCh38** — confirm this matches the challenge
 dataset's build before running (check the HF dataset card/rules); dbSNP,
@@ -143,65 +169,33 @@ Point Nextflow's work directory at the SSD (default is fine if you launch
 don't quietly eat the remaining headroom.
 
 
-## Pipeline modules
+### 5. Run the pipeline
 
-Analysis lives in two sibling trees, one numbered module per step each:
+The Nextflow pipeline's configuration and files live under `pipeline/`
 
-```
-Re-calling_Pipeline/       # variant calling redone from scratch, raw FASTQs onward
-├── 001_FastQC/
-│   ├── data -> ../../InitialData     # symlink to this module's input
-│   ├── bin/run_fastqc.sh             # the only thing you run
-│   └── results/                      # outputs + one manifest per command
-├── 002_Alignment/
-├── 003_MarkDuplicates/
-└── ...
+Default configuration and profiles are defined in `pipeline/nextflow.config`, you can modify them if needed.
 
-VCF_pipeline/               # analysis of the organizer-provided, pre-called VCF
-├── 001_FilterVCF/
-├── 002-VEPAnnotation/
-└── ...
-```
+The configuration provides three different profiles to run the pipeline, `apptainer` to use a container image, and `micromamba` and `conda` to use virtual environments.
 
-Each module has exactly three folders:
-- **`data/`** — a symlink to this module's input (raw data for module 001,
-  the previous module's `results/` for most later ones — but not always:
-  e.g. trimming acts on the raw reads, not on FastQC's reports, so its
-  `data/` symlinks past 001 straight to `InitialData/`. Check what a module
-  actually needs before assuming "previous module's output").
-- **`bin/`** — the module's script(s). One `run_*.sh` entrypoint per
-  module, sourcing `common/manifest.sh`.
-- **`results/`** — outputs, plus a `manifest_<timestamp>.yaml` per command
-  actually executed (command, params, container + its sha256, resources,
-  git commit, inputs, outputs, exit code) via the shared `run_and_log`
-  helper in `common/manifest.sh`. `manifest_latest.yaml` symlinks to the
-  most recent one. Small reports (FastQC/MultiQC html) and every manifest
-  are git-tracked; heavy formats (fastq/bam/vcf/etc.) are not — see
-  `.gitignore`.
+Run the pipeline as
 
-Run a module from the project root, inside the VM:
 ```bash
-bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
-# override defaults: CPUS=6 MEM=20GiB bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
+# Nextflow will use the container image built in the previous steps
+nextflow run pipeline/main.nf -profile apptainer
 ```
 
-`scripts/` (one-time environment/data setup — build the container, pull the
-dataset/references) is separate from `Re-calling_Pipeline/`/`VCF_pipeline/`
-(the actual analysis steps) on purpose: the former runs once per laptop,
-the latter is what gets re-run, extended, and eventually ported to
-Nextflow.
+or
 
-**Known gap:** `container/hackathon.def` has no read trimmer (no
-`fastp`/`trimmomatic`/`cutadapt`) — only decide whether 002_Trimming is
-needed after reading 001's MultiQC report; if trimming turns out to be
-required, add `fastp` to the def file and rebuild before writing that
-module.
+```bash
+# Nextflow will create the virtual environments as required
+# replace `micromamba` for `conda` if you're using conda
+nextflow run pipeline/main.nf -profile micromamba
+```
 
-## If the SSD mount misbehaves inside the VM
+The default entrypoint for the pipeline runs QC. Run specific workflows with `-entry WORKFLOW_NAME`.
 
-Lima shares the host directory via virtiofs, which usually handles Apptainer
-sandbox/build operations fine. If you hit permission or symlink errors during
-`apptainer build`, the fallback is to create a large raw disk image *file* on
-the SSD (e.g. 250GB) and attach it to the Lima VM as a second, ext4-formatted
-virtual disk — full native Linux filesystem semantics, still physically
-stored on the SSD. Flag it here if we hit this and we'll set it up.
+Specify parameters in the command line by adding `--param_name my_param_value`.
+E.g.
+```bash
+nextflow run pipeline/main.nf -profile apptainer --fastq path_to_fastq.gz
+```

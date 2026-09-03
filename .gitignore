@@ -60,3 +60,8 @@ Thumbs.db
 # Editors
 .vscode/
 .idea/
+
+# Nextflow
+.nextflow/
+.nextflow.log*
+work/
