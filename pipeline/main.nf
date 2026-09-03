@@ -11,43 +11,37 @@ process fastqc {
     tuple val(sample_id), path(gz_file)
     
     output:
-    tuple val(sample_id), path("${sample_id}.fastq.out") // @TODO
+    path("${sample_id}_fastqc.zip")
 
     script:
     """
-    # fastqc --threads ${task.cpus} ${gz_file}
-    touch ${sample_id}.fastq.out # temp
-    fastqc --help
+    fastqc --threads ${task.cpus} ${gz_file}
     """
 }
 
 process multiqc {
-    tag "${sample_id}"
-
     publishDir "${params.outdir}/multiqc", mode: "copy"
 
     input:
-    tuple val(sample_id), path(fastqc_output)
+    path(fastqc_outs)
 
     output:
-    tuple val(sample_id), path("${sample_id}.multiqc_report.html") // @TODO
+    path("multiqc_report.html")
 
     script:
     """
-    # multiqc ${fastqc_output} --force
-    touch ${sample_id}.multiqc_report.html # temp
-    multiqc --help
+    multiqc .
     """
 }
 
 workflow qc {
-    Channel.fromPath("${params.fastq}")
-        .map { file -> tuple(file.simpleName, file) }
+    Channel.fromPath("${params.fastqDir}/*.fastq.gz")
+        .map { file -> record(id: file.simpleName, fastq: file) }
         .set { fastq_ch }
 
     fastqc(fastq_ch)
 
-    multiqc(fastqc.out)
+    multiqc(fastqc.out.collect())
 }
 
 // Default entrypoint
