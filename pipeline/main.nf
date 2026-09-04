@@ -34,7 +34,23 @@ process multiqc {
     """
 }
 
-// @TODO: add reference download process
+process alignment {
+    publishDir "${params.outdir}/bam", mode: "copy"
+
+    input:
+    tuple val(sample_id), path(fastq1), path(fastq2), path(reference)
+
+    output:
+    path("${sample_id}.bam")
+
+    script:
+    """
+    # bwa index ${reference} # Uncomment if skipped bwa index download
+    bwa mem ${reference} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
+    samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
+    # samtools index ${sample_id}.bam
+    """
+}
 
 process vep {
     publishDir "${params.outdir}/vep", mode: "copy"
@@ -47,8 +63,8 @@ process vep {
 
     script:
     custom_clinvar = "--custom ${clinvar},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
-    custom_dbsnp = dbsnp.name != "NO_FILE" ? "--custom ${dbsnp},dbSNP,vcf,exact,0," : ""
     custom_gnomad = "--custom ${gnomad},gnomAD,vcf,exact,0,FLAG,AF"
+    custom_dbsnp = dbsnp.name != "NO_FILE" ? "--custom ${dbsnp},dbSNP,vcf,exact,0," : "" // optional
     vcf_out = "vep_${vcf.simpleName}"
     """
     vep -i ${vcf} \
@@ -76,7 +92,16 @@ workflow qc {
     multiqc(fastqc.out.collect())
 }
 
+workflow preprocess {
+    Channel.fromFilePairs("${params.fastqDir}/*_{R1,R2}*.fastq.gz", flat: true)
+        .combine(Channel.of(file(params.genome)))
+        .set { fastq_pairs_ch }
+
+    alignment(fastq_pairs_ch)
+}
+
 // Default entrypoint
 workflow {
     qc()
+    preprocess()
 }
