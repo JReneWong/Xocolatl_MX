@@ -41,7 +41,7 @@ process alignment {
     tuple val(sample_id), path(fastq1), path(fastq2), path(ref_genome)
 
     output:
-    path("${sample_id}.bam")
+    tuple val(sample_id), path("${sample_id}.bam")
 
     script:
     """
@@ -49,6 +49,41 @@ process alignment {
     bwa mem -t ${task.cpus} ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
     samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
     # samtools index ${sample_id}.bam
+    """
+}
+
+process mark_duplicates {
+    publishDir "${params.outdir}/bam", mode: "copy"
+
+    input:
+    tuple val(sample_id), path(bam)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_dupmarked.bam")
+    path("${sample_id}_metrics.txt")
+
+    script:
+    """
+    picard MarkDuplicates I=${bam} O=${sample_id}_dupmarked.bam M=${sample_id}_metrics.txt
+    """
+}
+
+process bqsr {
+    publishDir "${params.outdir}/bqsr", mode: "copy"
+
+    input:
+    tuple val(sample_id), path(bam)
+
+    output:
+    tuple val(sample_id), path("${sample_id}_bqsr.bam")
+
+    script:
+    """
+    gatk BaseRecalibrator -I ${bam} -O ${sample_id}_recal_data.table \
+        -R ${params.ref_genome_dir}/${params.ref_genome_file} \
+        # @TODO --known-sites ?
+    gatk ApplyBQSR -R ${params.ref_genome_dir}/${params.ref_genome_file} \
+        -I ${bam} -O ${sample_id}_bqsr.bam --bqsr-recal-file ${sample_id}_recal_data.table
     """
 }
 
@@ -98,6 +133,8 @@ workflow preprocess {
         .set { fastq_pairs_ch }
 
     alignment(fastq_pairs_ch)
+    mark_duplicates(alignment.out)
+    bqsr(mark_duplicates.out[0])
 }
 
 // Default entrypoint
