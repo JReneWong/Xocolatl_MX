@@ -101,7 +101,7 @@ bash scripts/record_versions.sh
 
 Follow either [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)'s (recommended) or [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)'s docs on installation.
 
-You do not have to create the environments as Nextflow will handle them as needed. You could however create them and then configure Nextflow to use existing environments.
+You do not have to create the environments as Nextflow will handle them as needed. You could however create them and then configure Nextflow to use existing environments, refer to their documentation for more information.
 
 Environment dependencies are defined in the yaml files under `container/`.
 
@@ -111,7 +111,6 @@ Environment dependencies are defined in the yaml files under `container/`.
 
 </details>
 
-
 ### 4. Download the challenge data (~85GB)
 
 ```bash
@@ -120,54 +119,17 @@ bash scripts/download_data.sh
 
 ### 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
 
-Everything here is pinned to **GRCh38** — confirm this matches the challenge
-dataset's build before running (check the HF dataset card/rules); dbSNP,
-ClinVar, and the VEP cache all have to agree with each other and with
-whatever the sequencing data was aligned to, or coordinates won't line up.
+Run the script to download references to `data/references`
 
 ```bash
 bash scripts/download_references.sh
 ```
 
-Genome + BWA index come from **Broad Institute's public GATK resource
-bundle**, not a local `bwa index` build — indexing the full genome needs
-~16-17GB RAM at peak, which no tuning fixes on an 8GB laptop. This bundle
-ships a pre-built index instead, so nothing memory-heavy runs locally at all.
-dbSNP is Broad's `dbsnp138` (much smaller than NCBI's full raw dump, and
-already contig-matched to the genome).
-
-Pulls into `./references/`: genome + BWA index (~8.9GB), dbSNP (~1.6GB),
-ClinVar (<1GB), VEP offline cache (~20GB). ~30-35GB total, one-time, do it
-on wifi you trust.
-
-**Contig naming — read this before annotating anything.** The genome/dbSNP
-above use `chr1`/`chr2`/`chrM` naming (Broad/UCSC convention). NCBI's ClinVar
-VCF uses plain `1`/`2`/`MT` (Ensembl/NCBI convention) — the script renames
-ClinVar's contigs to match after downloading. The VEP offline cache (step
-4) is Ensembl-based, i.e. **non**-chr-prefixed — if you feed it a VCF called
-from the chr-prefixed genome above, VEP won't match anything until you
-either strip the `chr` prefix first or pass VEP's `--synonyms` option. Not
-yet automated here; flag it when we get to the annotation step and we'll
-sort out whichever approach is cleaner then.
-
-### Space budget on the 0.5TB SSD
-
-| Item | Est. size |
-|---|---|
-| Challenge dataset | ~85GB |
-| Reference genome + BWA index (Broad bundle) | ~8.9GB |
-| dbSNP (Broad dbsnp138) | ~1.6GB |
-| ClinVar | <1GB |
-| VEP offline cache | ~20GB |
-| Container image (`.sif`) | ~5-8GB |
-| **Baseline total** | **~120GB** |
-| Nextflow `work/` during pipeline runs | variable, can add 100GB+ |
-
-Point Nextflow's work directory at the SSD (default is fine if you launch
-`nextflow run` from inside the project root on `/mnt/ssd`) and run
-`nextflow clean -f` after confirming a run succeeded, so intermediate files
-don't quietly eat the remaining headroom.
-
+This includes:
+- Genome + BWA index from **Broad Institute's public GATK resource bundle** (~3.2GB + 6.4GB)
+- dbSNP from **Broad Institute's public GATK resource bundle** (~1.6GB)
+- ClinVar from **NCBI** (184MB)
+- VEP cache from **ENSEMBL** (~26GB)
 
 ### 5. Run the pipeline
 
@@ -192,10 +154,12 @@ or
 nextflow run pipeline/main.nf -profile micromamba
 ```
 
-The default entrypoint for the pipeline runs QC. Run specific workflows with `-entry WORKFLOW_NAME`.
+The default entrypoint for the pipeline runs everything.
+
+Run specific workflows with `-entry WORKFLOW_NAME`.
 
 Specify parameters in the command line by adding `--param_name my_param_value`.
 E.g.
 ```bash
-nextflow run pipeline/main.nf -profile apptainer --fastq path_to_fastq.gz
+nextflow run pipeline/main.nf -profile apptainer --fastqDir /path/to/dir_with_fastqs/
 ```

@@ -38,15 +38,15 @@ process alignment {
     publishDir "${params.outdir}/bam", mode: "copy"
 
     input:
-    tuple val(sample_id), path(fastq1), path(fastq2), path(reference)
+    tuple val(sample_id), path(fastq1), path(fastq2), path(ref_genome)
 
     output:
     path("${sample_id}.bam")
 
     script:
     """
-    # bwa index ${reference} # Uncomment if skipped bwa index download
-    bwa mem ${reference} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
+    # bwa index ${ref_genome} # Uncomment if skipped bwa index download
+    bwa mem -t ${task.cpus} ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
     samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
     # samtools index ${sample_id}.bam
     """
@@ -94,7 +94,7 @@ workflow qc {
 
 workflow preprocess {
     Channel.fromFilePairs("${params.fastqDir}/*_{R1,R2}*.fastq.gz", flat: true)
-        .combine(Channel.of(file(params.genome)))
+        .combine(Channel.of(file(params.ref_genome_dir)))
         .set { fastq_pairs_ch }
 
     alignment(fastq_pairs_ch)
