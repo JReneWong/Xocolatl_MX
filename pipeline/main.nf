@@ -35,22 +35,42 @@ process multiqc {
 }
 
 process alignment {
-    publishDir "${params.outdir}/bam", mode: "copy"
+    tag "${sample_id}"
+
+    // publishDir "${params.outdir}/bam", mode: "copy"
 
     input:
     tuple val(sample_id), path(fastq1), path(fastq2)
     path(ref_genome)
 
     output:
-    tuple val(sample_id), path("${sample_id}.bam")
+    path("${sample_id}.bam")
 
     script:
     """
     # bwa index ${ref_genome} # Uncomment if skipped bwa index download
-    # @TODO add read groups
-    bwa mem -t ${task.cpus} ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
+    bwa mem -t ${task.cpus} \
+        -R '@RG\\tID:${sample_id}\\tSM:${sample_id}\\tPL:${params.platform}' \
+        ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} \
+        | samtools view -b -o ${sample_id}_unsorted.bam
     samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
-    # samtools index ${sample_id}.bam
+    samtools index ${sample_id}.bam
+    """
+}
+
+process merge_bams {
+    publishDir "${params.outdir}/bam", mode: "copy"
+
+    input:
+    path(bams)
+
+    output:
+    path("merged.bam")
+
+    script:
+    """
+    samtools merge -o merged.bam ${bams.join(' ')}
+    samtools index merged.bam
     """
 }
 
@@ -58,15 +78,16 @@ process mark_duplicates {
     publishDir "${params.outdir}/bam", mode: "copy"
 
     input:
-    tuple val(sample_id), path(bam)
+    path(bam)
 
     output:
-    tuple val(sample_id), path("${sample_id}_dupmarked.bam")
-    path("${sample_id}_metrics.txt")
+    path("dupmarked.bam")
+    path("picard_metrics.txt")
 
     script:
     """
-    picard MarkDuplicates I=${bam} O=${sample_id}_dupmarked.bam M=${sample_id}_metrics.txt
+    picard MarkDuplicates I=${bam} O=dupmarked.bam \
+        M=picard_metrics.txt CREATE_INDEX=true
     """
 }
 
@@ -74,31 +95,38 @@ process bqsr {
     publishDir "${params.outdir}/bqsr", mode: "copy"
 
     input:
-    tuple val(sample_id), path(bam)
+    path(bam)
     path(ref_genome)
     path(dbsnp)
     path(known_sites)
 
     output:
-    tuple val(sample_id), path("${sample_id}_bqsr.bam")
+    path("bqsr.bam")
 
     script:
     """
-    gatk BaseRecalibrator -I ${bam} -O ${sample_id}_recal_data.table \
+    gatk BaseRecalibrator -I ${bam} -O recal_data.table \
         -R ${ref_genome}/${params.ref_genome_file} \
         -known-sites ${dbsnp}/${params.dbsnp_file} \
         -known-sites ${known_sites}/${params.known_indels_file} \
         -known-sites ${known_sites}/${params.mills_file}
     gatk ApplyBQSR -R ${ref_genome}/${params.ref_genome_file} \
-        -I ${bam} -O ${sample_id}_bqsr.bam --bqsr-recal-file ${sample_id}_recal_data.table \
+        -I ${bam} -O bqsr.bam --bqsr-recal-file recal_data.table \
     """
 }
 
 process vep {
+    tag "${vcf.simpleName}"
+
     publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    tuple path(vcf), path(ref_genome), path(vep_cache), path(gnomad), path(clinvar), path(dbsnp), val(ens_ver), val(assembly), val(species)
+    path(vcf)
+    path(ref_genome)
+    path(vep_cache)
+    path(gnomad)
+    path(clinvar)
+    path(dbsnp)
 
     output:
     path("${vcf_out}")
@@ -111,9 +139,9 @@ process vep {
     """
     vep -i ${vcf} \
         -o ${vcf_out} \
-        --cache_version ${ens_ver} \
+        --cache_version ${params.ens_ver} \
         --cache --dir ${vep_cache} --fasta ${ref_genome} \
-        --species ${species} --assembly ${assembly}  \
+        --species ${params.species} --assembly ${params.assembly}  \
         ${custom_clinvar} ${custom_dbsnp} ${custom_gnomad} \
         --compress_output bgzip --show_ref_allele --fork 6 --force_overwrite \
         --vcf -t SO --format vcf --buffer 50000 --offline --symbol \
@@ -139,7 +167,8 @@ workflow preprocess {
         .set { fastq_pairs_ch }
 
     alignment(fastq_pairs_ch, file(params.ref_genome_dir))
-    mark_duplicates(alignment.out)
+    merge_bams(alignment.out.collect()) // all bams, only one patient
+    mark_duplicates(merge_bams.out)
     bqsr(
         mark_duplicates.out[0],
         file(params.ref_genome_dir),
