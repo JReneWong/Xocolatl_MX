@@ -1,41 +1,46 @@
-# Rare Disease, Real Kid — MVA Hackathon 2026: Team Setup
+# Rare Disease, Real Kid — MVA Hackathon 2026
 
-Working notes and starter kit for setting up our environment. Submission window:
+Submission window:
 24 Aug 2026 – 24 Oct 2026.
 
-## Why a Linux VM?
+## Setup
 
-Apptainer/Singularity only runs on Linux. Since both of our laptops are macOS,
-we run it inside a small Linux VM using **Lima**, and mount the external SSD
-straight into that VM so the container image, working repo, and data all live
-in one place regardless of which laptop is plugged in.
+We use an Apptainer image to run analysis on the provided dataset.
 
-## 0. One-time setup (do this once per laptop)
+Apptainer only runs on Linux, if you're using MacOS you can follow the next steps to setup a Linux VM.
+
+<details>
+<summary>Create a Linux VM with MacOS</summary>
+
+We recommend using Lima to create the VM.
 
 ```bash
 # Install Lima (VM manager) via Homebrew
 brew install lima
-
-# Plug in the external SSD and find its mount name, e.g. /Volumes/HackathonSSD
-ls /Volumes
 ```
 
-Edit `lima/hackathon-vm.yaml` and replace `/Volumes/HackathonSSD` with your
-SSD's actual mount path in the `mounts:` section (do this on *each* laptop
-separately — the mount path is local to that machine, the VM config file
-itself can live in git).
+The VM config is defined under `lima/hackathon-vm.yaml`. You can edit it to setup specific resources for the VM. If you're using an external drive, edit the config yaml file to set the mount point for the VM.
 
-## 1. Start the VM
+Start the VM
 
 ```bash
 limactl start --name=hackathon lima/hackathon-vm.yaml
 limactl shell hackathon
 ```
 
-You're now inside an Ubuntu VM. Your SSD is mounted at `/mnt/ssd` inside the VM
-(see the yaml — adjust if you prefer a different mount point).
+You should now be inside an Ubuntu VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
 
-## 2. Install Apptainer inside the VM (one-time per VM)
+If you need to resize the VM you can do so by stopping the VM, editing the config yaml file and starting it again.
+
+```bash
+limactl stop hackathon
+# edit lima/hackathon-vm.yaml: raise cpus/memory
+limactl start hackathon
+```
+
+</details>
+
+## 2. Install Apptainer
 
 ```bash
 sudo apt update
@@ -48,18 +53,13 @@ apptainer --version
 
 ## 3. Build the container image
 
-From inside the VM, with the SSD mounted at `/mnt/ssd`:
+Run the command from the directory you want the image to be created
 
-```bash
-cd /mnt/ssd/rare-disease-hackathon   # our project root, on the SSD
+```shell
 apptainer build container/hackathon.sif container/hackathon.def
 ```
 
-This builds a `.sif` image (single file, lives happily on the SSD regardless
-of its filesystem format). Building can take a while and use a fair bit of
-RAM/CPU — fine to do this on the 8GB laptop since the container itself is
-small; save actual variant-calling *runs* for once we're on the 32GB machine
-or have confirmed cloud compute (see below).
+This builds a `.sif` image. Building can take a while and use a fair bit of RAM/CPU.
 
 ### What's inside the image
 
@@ -90,23 +90,13 @@ After building, capture the version manifest into git-tracked docs:
 bash scripts/record_versions.sh
 ```
 
-## 4. Clone / init the git repo
-
-The repo also lives on the SSD, e.g. `/mnt/ssd/rare-disease-hackathon`.
-Either laptop can `limactl shell hackathon` and work from there.
+## 4. Clone the git repo
 
 ```bash
-cd /mnt/ssd
-git clone git@github.com:<org-or-user>/rare-disease-hackathon.git
-# or, if starting fresh:
-cd rare-disease-hackathon
-git init
-git remote add origin git@github.com:<org-or-user>/rare-disease-hackathon.git
+git clone git@github.com:JReneWong/Xocolatl_MX.git
 ```
 
-**Important:** never commit anything from `data/`, `.sif` images, or large
-intermediate files — see `.gitignore`. GitHub is for code/config only; each of
-us downloads the ~85GB dataset independently to our own SSD/drive.
+**Important:** never commit anything from `data/`, `.sif` images, or large intermediate files — see `.gitignore`.
 
 ## 5. Download the challenge data (do this when ready, it's ~85GB)
 
@@ -164,37 +154,24 @@ Point Nextflow's work directory at the SSD (default is fine if you launch
 `nextflow clean -f` after confirming a run succeeded, so intermediate files
 don't quietly eat the remaining headroom.
 
-## 6. Before running any heavy analysis
-
-- Check the hackathon's rules/FAQ (behind login on the HF Space) for whether
-  AWS compute credits or a shared environment are provided — if so, that
-  should be our primary compute, not either laptop.
-- On the 8GB laptop: fine for setup, scripting, exploring VCF headers, small
-  chromosome/region subsets. Not fine for full-genome GATK/VEP runs.
-- On the 32GB MacBook Air (once it arrives): bump the VM's resources in
-  `lima/hackathon-vm.yaml` (cpus/memory) and restart the VM before running
-  full pipelines.
-
-## Resizing the VM later
-
-```bash
-limactl stop hackathon
-# edit lima/hackathon-vm.yaml: raise cpus/memory
-limactl start hackathon
-```
 
 ## Pipeline modules
 
-Analysis lives in `pipeline/`, one numbered module per step:
+Analysis lives in two sibling trees, one numbered module per step each:
 
 ```
-pipeline/
+Re-calling_Pipeline/       # variant calling redone from scratch, raw FASTQs onward
 ├── 001_FastQC/
 │   ├── data -> ../../InitialData     # symlink to this module's input
 │   ├── bin/run_fastqc.sh             # the only thing you run
 │   └── results/                      # outputs + one manifest per command
-├── 002_Trimming/
-├── 003_Alignment/
+├── 002_Alignment/
+├── 003_MarkDuplicates/
+└── ...
+
+VCF_pipeline/               # analysis of the organizer-provided, pre-called VCF
+├── 001_FilterVCF/
+├── 002-VEPAnnotation/
 └── ...
 ```
 
@@ -216,14 +193,15 @@ Each module has exactly three folders:
 
 Run a module from the project root, inside the VM:
 ```bash
-bash pipeline/001_FastQC/bin/run_fastqc.sh
-# override defaults: CPUS=6 MEM=20GiB bash pipeline/001_FastQC/bin/run_fastqc.sh
+bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
+# override defaults: CPUS=6 MEM=20GiB bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
 ```
 
 `scripts/` (one-time environment/data setup — build the container, pull the
-dataset/references) is separate from `pipeline/` (the actual analysis
-steps) on purpose: the former runs once per laptop, the latter is what
-gets re-run, extended, and eventually ported to Nextflow.
+dataset/references) is separate from `Re-calling_Pipeline/`/`VCF_pipeline/`
+(the actual analysis steps) on purpose: the former runs once per laptop,
+the latter is what gets re-run, extended, and eventually ported to
+Nextflow.
 
 **Known gap:** `container/hackathon.def` has no read trimmer (no
 `fastp`/`trimmomatic`/`cutadapt`) — only decide whether 002_Trimming is

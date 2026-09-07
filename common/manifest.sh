@@ -11,6 +11,20 @@
 # bottleneck. We record the resolved symlink target instead, which is
 # enough to know exactly which file was used.
 
+# Usage: CONTAINER="$(resolve_container "$PROJECT_ROOT")"
+# The .sif is arch-specific (container/hackathon_<arch>.sif) — the team
+# builds on both Apple Silicon Macs (via the Lima VM, arm64) and x86_64
+# Linux, and a .sif built for one arch cannot run on the other
+# ("the image's architecture ... could not run on the host's").
+resolve_container() {
+    local project_root="$1"
+    case "$(uname -m)" in
+        x86_64)  echo "$project_root/container/hackathon_amd64.sif" ;;
+        aarch64) echo "$project_root/container/hackathon_arm64.sif" ;;
+        *) echo "Unsupported architecture: $(uname -m)" >&2; return 1 ;;
+    esac
+}
+
 # Usage: run_and_log MODULE_DIR CONTAINER_SIF CPUS MEM -- <command...>
 run_and_log() {
     local module_dir="$1"; shift
@@ -32,8 +46,10 @@ run_and_log() {
         container_sha="$(sha256sum "$container_sif" | cut -d' ' -f1)"
     fi
 
-    local git_commit=""
-    git_commit="$(git -C "$module_dir" rev-parse HEAD 2>/dev/null || echo "unknown")"
+    local git_commit="unknown"
+    if git -C "$module_dir" rev-parse --verify HEAD >/dev/null 2>&1; then
+        git_commit="$(git -C "$module_dir" rev-parse HEAD)"
+    fi
 
     local marker
     marker="$(mktemp)"
@@ -61,8 +77,18 @@ run_and_log() {
         echo "git_commit: $git_commit"
         echo "exit_code: $exit_code"
         echo "inputs:"
-        find "$module_dir/data" -maxdepth 1 \( -type f -o -type l \) 2>/dev/null | sort | while read -r f; do
-            resolved="$(readlink -f "$f" 2>/dev/null || echo "$f")"
+        local input_dir="${MANIFEST_INPUT_DIR:-$module_dir/data}"
+        find "$input_dir" -maxdepth 1 \( -type f -o -type l \) 2>/dev/null | sort | while read -r f; do
+            # Only trust readlink -f on an actual symlink. On exFAT mounted
+            # natively on Linux, a macOS-created symlink shows up as a
+            # plain file (Apple's exFAT symlink emulation isn't portable),
+            # so readlink -f would otherwise silently "resolve" it to
+            # itself and look correct when it isn't.
+            if [ -L "$f" ]; then
+                resolved="$(readlink -f "$f" 2>/dev/null || echo "$f")"
+            else
+                resolved="$f"
+            fi
             echo "  - path: $f"
             echo "    resolved: $resolved"
         done
@@ -73,7 +99,14 @@ run_and_log() {
     } > "$manifest"
 
     rm -f "$marker"
-    ln -sf "$(basename "$manifest")" "$results_dir/manifest_latest.yaml"
+    # A real symlink where the filesystem supports it (e.g. this repo
+    # shared into the Lima VM on macOS); exFAT mounted natively on Linux
+    # can't create symlinks at all ("Operation not permitted"), so fall
+    # back to a plain copy there — same end result for readers, just not
+    # a live link.
+    if ! ln -sf "$(basename "$manifest")" "$results_dir/manifest_latest.yaml" 2>/dev/null; then
+        cp -f "$manifest" "$results_dir/manifest_latest.yaml"
+    fi
     echo "Manifest written: $manifest"
     return $exit_code
 }

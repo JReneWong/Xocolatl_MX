@@ -21,28 +21,21 @@ references/
 # each teammate keeps their own local copy instead of versioning it.
 Challenge_*.docx
 
-# Top-level results/ — final deliverable rollups only (small tables/figures
-# for the write-up), not per-module working output. See pipeline/ below for
-# that.
-results/*.png
-results/*.tsv
-!results/.gitkeep
+# results/ — internal working output only, never tracked. This covers every
+# module's results/ under Re-calling_Pipeline/, VCF_pipeline/, and the
+# top-level rollup dir, at any depth. Reverses an earlier convention (this
+# project used to track manifests + small QC reports as the run record);
+# results/ derives from real patient sample data, so none of it — reports,
+# logs, or manifests — goes in version control, full stop. Keep only the
+# empty .gitkeep placeholders so `git clone` recreates the expected
+# directory skeleton.
+**/results/*
+!**/results/.gitkeep
 
-# pipeline/00N_Module/data — these are symlinks (just a path string), not
-# the data itself, so they ARE tracked; the real files they point at are
-# already excluded above (InitialData/, references/).
-
-# pipeline/00N_Module/results — ignore heavy/derived formats by extension
-# rather than the whole directory, so small QC reports (FastQC/MultiQC
-# html) and every manifest_*.yaml stay in git as the run record.
-pipeline/*/results/*.fastq.gz
-pipeline/*/results/*.bam
-pipeline/*/results/*.bai
-pipeline/*/results/*.sam
-pipeline/*/results/*.cram
-pipeline/*/results/*.vcf.gz
-pipeline/*/results/*.vcf.gz.tbi
-!pipeline/*/results/manifest_*.yaml
+# 00N_Module/data — these are symlinks (just a path string) or plain
+# documentation stubs (see each module's data/README.txt), not the data
+# itself, so they ARE tracked; the real files they point at are already
+# excluded above (InitialData/, references/).
 
 # Python
 __pycache__/
@@ -53,7 +46,12 @@ env/
 
 # OS
 .DS_Store
+.DS_Store?
 ._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # Editors
 .vscode/
