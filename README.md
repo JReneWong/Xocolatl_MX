@@ -130,6 +130,7 @@ This includes:
 - dbSNP from **Broad Institute's public GATK resource bundle** (~1.6GB)
 - ClinVar from **NCBI** (184MB)
 - VEP cache from **ENSEMBL** (~26GB)
+- Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB)
 
 ### 5. Run the pipeline
 

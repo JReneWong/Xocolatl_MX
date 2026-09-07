@@ -38,7 +38,8 @@ process alignment {
     publishDir "${params.outdir}/bam", mode: "copy"
 
     input:
-    tuple val(sample_id), path(fastq1), path(fastq2), path(ref_genome)
+    tuple val(sample_id), path(fastq1), path(fastq2)
+    path(ref_genome)
 
     output:
     tuple val(sample_id), path("${sample_id}.bam")
@@ -46,6 +47,7 @@ process alignment {
     script:
     """
     # bwa index ${ref_genome} # Uncomment if skipped bwa index download
+    # @TODO add read groups
     bwa mem -t ${task.cpus} ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} | samtools view -b -o ${sample_id}_unsorted.bam
     samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
     # samtools index ${sample_id}.bam
@@ -73,6 +75,9 @@ process bqsr {
 
     input:
     tuple val(sample_id), path(bam)
+    path(ref_genome)
+    path(dbsnp)
+    path(known_sites)
 
     output:
     tuple val(sample_id), path("${sample_id}_bqsr.bam")
@@ -80,10 +85,12 @@ process bqsr {
     script:
     """
     gatk BaseRecalibrator -I ${bam} -O ${sample_id}_recal_data.table \
-        -R ${params.ref_genome_dir}/${params.ref_genome_file} \
-        # @TODO --known-sites ?
-    gatk ApplyBQSR -R ${params.ref_genome_dir}/${params.ref_genome_file} \
-        -I ${bam} -O ${sample_id}_bqsr.bam --bqsr-recal-file ${sample_id}_recal_data.table
+        -R ${ref_genome}/${params.ref_genome_file} \
+        -known-sites ${dbsnp}/${params.dbsnp_file} \
+        -known-sites ${known_sites}/${params.known_indels_file} \
+        -known-sites ${known_sites}/${params.mills_file}
+    gatk ApplyBQSR -R ${ref_genome}/${params.ref_genome_file} \
+        -I ${bam} -O ${sample_id}_bqsr.bam --bqsr-recal-file ${sample_id}_recal_data.table \
     """
 }
 
@@ -129,12 +136,16 @@ workflow qc {
 
 workflow preprocess {
     Channel.fromFilePairs("${params.fastqDir}/*_{R1,R2}*.fastq.gz", flat: true)
-        .combine(Channel.of(file(params.ref_genome_dir)))
         .set { fastq_pairs_ch }
 
-    alignment(fastq_pairs_ch)
+    alignment(fastq_pairs_ch, file(params.ref_genome_dir))
     mark_duplicates(alignment.out)
-    bqsr(mark_duplicates.out[0])
+    bqsr(
+        mark_duplicates.out[0],
+        file(params.ref_genome_dir),
+        file(params.dbsnp_dir),
+        file(params.known_sites_dir)
+    )
 }
 
 // Default entrypoint
