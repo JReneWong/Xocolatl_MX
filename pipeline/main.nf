@@ -44,17 +44,18 @@ process alignment {
     path(ref_genome)
 
     output:
-    path("${sample_id}.bam")
+    path("${sample_id}.bam{,.bai}")
 
     script:
     """
+    RG=\$(split_id.sh ${sample_id} ${params.platform})
     # bwa index ${ref_genome} # Uncomment if skipped bwa index download
     bwa mem -t ${task.cpus} \
-        -R '@RG\\tID:${sample_id}\\tSM:${sample_id}\\tPL:${params.platform}' \
+        -R \$RG \
         ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} \
         | samtools view -b -o ${sample_id}_unsorted.bam
-    samtools sort -o ${sample_id}.bam ${sample_id}_unsorted.bam
-    samtools index ${sample_id}.bam
+    samtools sort -@ ${task.cpus} -o ${sample_id}.bam ${sample_id}_unsorted.bam
+    samtools index -@ ${task.cpus} ${sample_id}.bam
     """
 }
 
@@ -65,12 +66,15 @@ process merge_bams {
     path(bams)
 
     output:
-    path("merged.bam")
+    path("merged.bam{,.bai}")
+    path("merged.flagstat.txt")
 
     script:
+    bam_files = bams.findAll { it.name.endsWith('.bam') }
     """
-    samtools merge -o merged.bam ${bams.join(' ')}
-    samtools index merged.bam
+    samtools merge -@ ${task.cpus} -o merged.bam ${bam_files.join(' ')}
+    samtools index -@ ${task.cpus} merged.bam
+    samtools flagstat -@ ${task.cpus} merged.bam > merged.flagstat.txt
     """
 }
 
@@ -81,13 +85,18 @@ process mark_duplicates {
     path(bam)
 
     output:
-    path("dupmarked.bam")
+    path("dupmarked.bam{,.bai}")
     path("picard_metrics.txt")
+    path("dupmarked.flagstat.txt")
 
     script:
+    bam_file = bam.find { it.name.endsWith('.bam') }
     """
-    picard MarkDuplicates I=${bam} O=dupmarked.bam \
+    picard MarkDuplicates I=${bam_file} O=dupmarked.bam \
+        OPTICAL_DUPLICATE_PIXEL_DISTANCE=${params.optical_dup_pixel_dist} \
+        VALIDATION_STRINGENCY=LENIENT \
         M=picard_metrics.txt CREATE_INDEX=true
+    samtools flagstat -@ ${task.cpus} dupmarked.bam > dupmarked.flagstat.txt
     """
 }
 
@@ -104,18 +113,39 @@ process bqsr {
     path("bqsr.bam")
 
     script:
+    bam_file = bam.find { it.name.endsWith('.bam') }
     """
-    gatk BaseRecalibrator -I ${bam} -O recal_data.table \
+    gatk BaseRecalibrator -I ${bam_file} -O recal_data.table \
         -R ${ref_genome}/${params.ref_genome_file} \
         -known-sites ${dbsnp}/${params.dbsnp_file} \
         -known-sites ${known_sites}/${params.known_indels_file} \
         -known-sites ${known_sites}/${params.mills_file}
     gatk ApplyBQSR -R ${ref_genome}/${params.ref_genome_file} \
-        -I ${bam} -O bqsr.bam --bqsr-recal-file recal_data.table \
+        -I ${bam_file} -O bqsr.bam --bqsr-recal-file recal_data.table \
     """
 }
 
-process vep {
+// process haplotype {
+
+// }
+
+process vcf_filter {
+    publishDir "${params.outdir}/vcf", mode: "copy"
+
+    input:
+    path(vcf)
+
+    output:
+    path("filtered.vcf")
+
+    script:
+    """
+    bcftools filter -i FILTER=PASS --threads ${task.cpus} -Oz -o 'filtered.vcf' '${vcf}'
+    bcftools index -t --threads ${task.cpus} 'filtered.vcf'
+    """
+}
+
+process annotation {
     tag "${vcf.simpleName}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
@@ -139,9 +169,9 @@ process vep {
     """
     vep -i ${vcf} \
         -o ${vcf_out} \
-        --cache_version ${params.ens_ver} \
+        --cache_version ${params.vep.cache_version} \
         --cache --dir ${vep_cache} --fasta ${ref_genome} \
-        --species ${params.species} --assembly ${params.assembly}  \
+        --species ${params.vep.species} --assembly ${params.vep.assembly}  \
         ${custom_clinvar} ${custom_dbsnp} ${custom_gnomad} \
         --compress_output bgzip --show_ref_allele --fork 6 --force_overwrite \
         --vcf -t SO --format vcf --buffer 50000 --offline --symbol \
@@ -168,13 +198,15 @@ workflow preprocess {
 
     alignment(fastq_pairs_ch, file(params.ref_genome_dir))
     merge_bams(alignment.out.collect()) // all bams, only one patient
-    mark_duplicates(merge_bams.out)
-    bqsr(
-        mark_duplicates.out[0],
-        file(params.ref_genome_dir),
-        file(params.dbsnp_dir),
-        file(params.known_sites_dir)
-    )
+    mark_duplicates(merge_bams.out[0])
+    if (params.run_bqsr) {
+        bqsr(
+            mark_duplicates.out[0],
+            file(params.ref_genome_dir),
+            file(params.dbsnp_dir),
+            file(params.known_sites_dir)
+        )
+    }
 }
 
 // Default entrypoint
