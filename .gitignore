@@ -1,5 +1,9 @@
-# Data — never commit, each teammate downloads independently
-data/
+# Data — never commit, each teammate downloads independently. Anchored to
+# repo root (leading /) — a bare "data/" would also match every module's
+# 00N_Module/data/ (a real directory here, holding just a documentation
+# stub — see the note below), which is a different thing entirely and
+# needs to stay tracked.
+/data/
 InitialData/
 *.fastq.gz
 *.vcf
