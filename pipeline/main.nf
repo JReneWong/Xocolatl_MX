@@ -125,9 +125,47 @@ process bqsr {
     """
 }
 
-// process haplotype {
+process haplotype {
+    tag "${bam.simpleName}_${contig}"
 
-// }
+    // publishDir "${params.outdir}/haplotype", mode: "copy"
+
+    input:
+    tuple path(bam), val(contig)
+    path(ref_genome)
+    path(dbsnp)
+
+    output:
+    path("chr*.vcf.gz{,.tbi}")
+
+    script:
+    bam_file = bam.find { it.name.endsWith('.bam') }
+    contig_str = "chr${contig}"
+    """
+    gatk HaplotypeCaller -I ${bam_file} \
+        -R ${ref_genome}/${params.ref_genome_file} \
+        -L ${contig_str} \
+        --dbsnp ${dbsnp}/${params.dbsnp_file} \
+        --native-pair-hmm-threads ${task.cpus} \
+        -O ${contig_str}.vcf.gz -OVI
+    """
+}
+
+process merge_vcfs {
+    publishDir "${params.outdir}/haplotype", mode: "copy"
+
+    input:
+    path(vcfs)
+
+    output:
+    path("merged.vcf.gz{,.tbi}")
+
+    script:
+    vcf_files = vcfs.findAll { it.name.endsWith('.vcf.gz') }.collect { "I=${it}" }
+    """
+    picard MergeVcfs ${vcf_files.join(' ')} O=merged.vcf.gz
+    """
+}
 
 process vcf_filter {
     publishDir "${params.outdir}/vcf", mode: "copy"
@@ -140,7 +178,7 @@ process vcf_filter {
 
     script:
     """
-    bcftools filter -i FILTER=PASS --threads ${task.cpus} -Oz -o 'filtered.vcf' '${vcf}'
+    bcftools filter -i FILTER=\"PASS\" --threads ${task.cpus} -Oz -o 'filtered.vcf' '${vcf}'
     bcftools index -t --threads ${task.cpus} 'filtered.vcf'
     """
 }
@@ -164,22 +202,22 @@ process annotation {
     script:
     custom_clinvar = "--custom ${clinvar},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
     custom_gnomad = "--custom ${gnomad},gnomAD,vcf,exact,0,FLAG,AF"
-    custom_dbsnp = dbsnp.name != "NO_FILE" ? "--custom ${dbsnp},dbSNP,vcf,exact,0," : "" // optional
+    custom_dbsnp = "--custom ${dbsnp},dbSNP,vcf,exact,0,"
     vcf_out = "vep_${vcf.simpleName}"
     """
+    # @TODO: move params to config file
     vep -i ${vcf} \
         -o ${vcf_out} \
         --cache_version ${params.vep.cache_version} \
         --cache --dir ${vep_cache} --fasta ${ref_genome} \
         --species ${params.vep.species} --assembly ${params.vep.assembly}  \
         ${custom_clinvar} ${custom_dbsnp} ${custom_gnomad} \
-        --compress_output bgzip --show_ref_allele --fork 6 --force_overwrite \
         --vcf -t SO --format vcf --buffer 50000 --offline --symbol \
+        --compress_output bgzip --show_ref_allele --fork 6 --force_overwrite \
         --biotype --sift b --flag_pick_allele_gene --canonical --hgvs --shift_hgvs 1 \
         --mane --numbers --protein --polyphen p --transcript_version --domains
     tabix -f -p vcf ${vcf_out}
     """
-
 }
 
 workflow qc {
@@ -199,14 +237,28 @@ workflow preprocess {
     alignment(fastq_pairs_ch, file(params.ref_genome_dir))
     merge_bams(alignment.out.collect()) // all bams, only one patient
     mark_duplicates(merge_bams.out[0])
-    if (params.run_bqsr) {
-        bqsr(
-            mark_duplicates.out[0],
-            file(params.ref_genome_dir),
-            file(params.dbsnp_dir),
-            file(params.known_sites_dir)
-        )
-    }
+
+    // @TODO: implement optional process
+    // if (params.run_bqsr) {
+    //     bqsr(
+    //         mark_duplicates.out[0],
+    //         file(params.ref_genome_dir),
+    //         file(params.dbsnp_dir),
+    //         file(params.known_sites_dir)
+    //     )
+    // }
+
+    Channel.of(1..22,"X","Y","M")
+        .flatten()
+        .set { contig_ch }
+
+    haplotype(
+        mark_duplicates.out[0].combine(contig_ch),
+        file(params.ref_genome_dir),
+        file(params.dbsnp_dir)
+    )
+    merge_vcfs(haplotype.out.collect())
+
 }
 
 // Default entrypoint
