@@ -159,11 +159,13 @@ process merge_vcfs {
 
     output:
     path("merged.vcf.gz{,.tbi}")
+    path("merged.vcf.gz.stats.txt")
 
     script:
     vcf_files = vcfs.findAll { it.name.endsWith('.vcf.gz') }.collect { "I=${it}" }
     """
     picard MergeVcfs ${vcf_files.join(' ')} O=merged.vcf.gz
+    bcftools stats merged.vcf.gz > merged.vcf.gz.stats.txt
     """
 }
 
@@ -171,15 +173,17 @@ process vcf_filter {
     publishDir "${params.outdir}/vcf", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
 
     output:
-    path("filtered.vcf")
+    path("filtered.vcf.gz{,.tbi}")
 
     script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     """
-    bcftools filter -i FILTER=\"PASS\" --threads ${task.cpus} -Oz -o 'filtered.vcf' '${vcf}'
-    bcftools index -t --threads ${task.cpus} 'filtered.vcf'
+    bcftools filter -i 'FILTER="PASS" || FILTER="." ' \
+        --threads ${task.cpus} -Oz -o 'filtered.vcf.gz' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} 'filtered.vcf.gz'
     """
 }
 
@@ -258,11 +262,24 @@ workflow preprocess {
         file(params.dbsnp_dir)
     )
     merge_vcfs(haplotype.out.collect())
-
 }
 
-// Default entrypoint
-workflow {
+workflow recalling{
     qc()
     preprocess()
+}
+
+workflow vcf {
+    Channel.fromFilePairs("${params.vcf_file}{,.tbi}", flat: false, size: -1)
+        .set { vcf_ch }
+    
+    vcf_filter(vcf_ch)
+}
+
+workflow {
+    if (params.flow == 'recalling') {
+        recalling()
+    } else if (params.flow == 'vcf') {
+        vcf()
+    }
 }
