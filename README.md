@@ -43,12 +43,10 @@ limactl shell hackathon
 
 You should now be inside an Ubuntu VM, perform the rest of the steps within the VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
 
-If you need to resize the VM you can do so by stopping the VM, editing the config yaml file and starting it again.
-
+If you need to resize the VM you can do so by editting the VM
+e.g.
 ```bash
-limactl stop hackathon
-# edit lima/hackathon-vm.yaml: raise cpus/memory
-limactl start hackathon
+limactl edit hackathon --cpus 4
 ```
 
 </details>

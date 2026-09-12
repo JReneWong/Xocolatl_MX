@@ -55,7 +55,9 @@ download "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz.tbi
 echo "Downloading VEP cache"
 VEP_CACHE="$REF_DIR/vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz"
 download "https://ftp.ensembl.org/pub/release-116/variation/indexed_vep_cache/homo_sapiens_vep_116_GRCh38.tar.gz" "$VEP_CACHE"
-
+echo "Extracting VEP cache"
+tar -xzf "$VEP_CACHE" -C "$REF_DIR/vep_cache"
+rm -rf "$VEP_CACHE"
 
 # Download known sites VCF
 # 63MB

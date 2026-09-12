@@ -187,7 +187,7 @@ process vcf_filter {
     """
 }
 
-process annotation {
+process vep_annotation {
     tag "${vcf.simpleName}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
@@ -201,19 +201,20 @@ process annotation {
     path(dbsnp)
 
     output:
-    path("${vcf_out}")
+    path("${vcf_out}{,.tbi}")
 
     script:
-    custom_clinvar = "--custom ${clinvar},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
-    custom_gnomad = "--custom ${gnomad},gnomAD,vcf,exact,0,FLAG,AF"
-    custom_dbsnp = "--custom ${dbsnp},dbSNP,vcf,exact,0,"
-    vcf_out = "vep_${vcf.simpleName}"
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    custom_clinvar = "--custom ${clinvar}/${params.clinvar_file},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
+    custom_gnomad = "--custom ${gnomad}/${params.gnomad_file},gnomAD,vcf,exact,0,FLAG,AF"
+    custom_dbsnp = "--custom ${dbsnp}/${params.dbsnp_file},dbSNP,vcf,exact,0,"
+    vcf_out = "vep.PASS.vcf.gz"
     """
     # @TODO: move params to config file
-    vep -i ${vcf} \
+    vep -i ${vcf_file} \
         -o ${vcf_out} \
         --cache_version ${params.vep.cache_version} \
-        --cache --dir ${vep_cache} --fasta ${ref_genome} \
+        --cache --dir ${vep_cache} --fasta ${ref_genome}/${params.ref_genome_file} \
         --species ${params.vep.species} --assembly ${params.vep.assembly}  \
         ${custom_clinvar} ${custom_dbsnp} ${custom_gnomad} \
         --vcf -t SO --format vcf --buffer 50000 --offline --symbol \
@@ -252,6 +253,7 @@ workflow preprocess {
     //     )
     // }
 
+    // Define contigs for haplotype calling
     Channel.of(1..22,"X","Y","M")
         .flatten()
         .set { contig_ch }
@@ -274,6 +276,14 @@ workflow vcf {
         .set { vcf_ch }
     
     vcf_filter(vcf_ch)
+    vep_annotation(
+        vcf_filter.out,
+        file(params.ref_genome_dir),
+        file(params.vep_cache_dir),
+        file(params.gnomad_dir),
+        file(params.clinvar_dir),
+        file(params.dbsnp_dir)
+    )
 }
 
 workflow {
