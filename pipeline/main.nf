@@ -176,14 +176,15 @@ process vcf_filter {
     tuple val(id), path(vcf)
 
     output:
-    path("filtered.vcf.gz{,.tbi}")
+    path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "filtered.vcf.gz"
     """
     bcftools filter -i 'FILTER="PASS" || FILTER="." ' \
-        --threads ${task.cpus} -Oz -o 'filtered.vcf.gz' '${vcf_file}'
-    bcftools index -t --threads ${task.cpus} 'filtered.vcf.gz'
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
 
@@ -222,6 +223,30 @@ process vep_annotation {
         --biotype --sift b --flag_pick_allele_gene --canonical --hgvs --shift_hgvs 1 \
         --mane --numbers --protein --polyphen p --transcript_version --domains
     tabix -f -p vcf ${vcf_out}
+    """
+}
+
+process lowfreqvar {
+    tag "${vcf.simpleName}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    path(vcf)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "rarevars-vep.PASS.vcf.gz"
+    """
+    bcftools +split-vep -c Consequence,IMPACT,SYMBOL,Gene,SIFT,PolyPhen,ClinVar_CLNSIG,Existing_variation,gnomAD_AF \
+        -s worst -p vep '${vcf_file}' \
+        | bcftools annotate -x 'INFO/CSQ' \
+        | bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
+        --threads ${task.cpus} -Oz -o '${vcf_out}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
 
@@ -284,6 +309,7 @@ workflow vcf {
         file(params.clinvar_dir),
         file(params.dbsnp_dir)
     )
+    lowfreqvar(vep_annotation.out)
 }
 
 workflow {
