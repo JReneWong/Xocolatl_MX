@@ -95,7 +95,8 @@ process mark_duplicates {
     picard MarkDuplicates I=${bam_file} O=dupmarked.bam \
         OPTICAL_DUPLICATE_PIXEL_DISTANCE=${params.optical_dup_pixel_dist} \
         VALIDATION_STRINGENCY=LENIENT \
-        M=picard_metrics.txt CREATE_INDEX=true
+        M=picard_metrics.txt
+    samtools index -@ ${task.cpus} dupmarked.bam
     samtools flagstat -@ ${task.cpus} dupmarked.bam > dupmarked.flagstat.txt
     """
 }
@@ -110,7 +111,7 @@ process bqsr {
     path(known_sites)
 
     output:
-    path("bqsr.bam")
+    path("bqsr.bam{,.bai}")
 
     script:
     bam_file = bam.find { it.name.endsWith('.bam') }
@@ -126,7 +127,7 @@ process bqsr {
 }
 
 process haplotype {
-    tag "${bam.simpleName}_${contig}"
+    tag "${bam_file.simpleName}_${contig}"
 
     // publishDir "${params.outdir}/haplotype", mode: "copy"
 
@@ -166,6 +167,30 @@ process merge_vcfs {
     """
     picard MergeVcfs ${vcf_files.join(' ')} O=merged.vcf.gz
     bcftools stats merged.vcf.gz > merged.vcf.gz.stats.txt
+    """
+}
+
+process nvscore {
+    publishDir "${params.outdir}/nvscore", mode: "copy"
+
+    input:
+    path(bam)
+    path(vcf)
+    path(ref_genome)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    bam_file = bam.find { it.name.endsWith('.bam') }
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "nvscore.vcf.gz"
+    """
+    gatk NVScoreVariants -I ${bam_file} -V ${vcf_file} \
+        -R ${ref_genome}/${params.ref_genome_file} \
+        -tensor-type read_tensor \
+        -O ${vcf_out}
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
 
@@ -284,11 +309,18 @@ workflow preprocess {
         .set { contig_ch }
 
     haplotype(
-        mark_duplicates.out[0].combine(contig_ch),
+        mark_duplicates.out[0].map{ files -> [files]}.combine(contig_ch),
         file(params.ref_genome_dir),
         file(params.dbsnp_dir)
     )
     merge_vcfs(haplotype.out.collect())
+
+    // @TODO use join or other operator
+    nvscore(
+        mark_duplicates.out[0],
+        merge_vcfs.out[0],
+        file(params.ref_genome_dir)
+    )
 }
 
 workflow recalling{
