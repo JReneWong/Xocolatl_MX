@@ -7,8 +7,10 @@ From: ubuntu:22.04
 
 %post
     export DEBIAN_FRONTEND=noninteractive
+    # unzip: needed to pull gatkPythonPackageArchive.zip out of GATK's
+    # official release zip further down (see the NVScoreVariants section).
     apt-get update && apt-get install -y --no-install-recommends \
-        wget curl ca-certificates bzip2 git \
+        wget curl ca-certificates bzip2 git unzip \
         build-essential zlib1g-dev libbz2-dev liblzma-dev libcurl4-openssl-dev \
         libssl-dev libncurses5-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -29,8 +31,44 @@ From: ubuntu:22.04
     # Kept separate from the R/Bioconductor and VEP envs below so a solver
     # conflict or a future change on one side never forces re-resolving the
     # others.
+    #
+    # gatk4 pinned (matches docs/software_versions.txt as of the last
+    # build) now that pytorch is in this same env: adding a big ML
+    # framework gives the solver a much harder dependency problem, and an
+    # unpinned gatk4 could in theory get re-resolved to a different build
+    # as a side effect. Pinning guarantees NVScoreVariants runs under the
+    # identical GATK build that already produced 004_HaplotypeCaller's
+    # output.
+    #
+    # pytorch + pytorch-lightning + numpy pinned, and biopython/pysam
+    # added: required by `gatk NVScoreVariants` — CNNScoreVariants (the
+    # tool originally proposed) was removed from GATK as of 4.6.1.0;
+    # GATK's own error message points at NVScoreVariants as the direct
+    # replacement ("produces virtually identical results"), but it's a
+    # PyTorch-based CNN, not TensorFlow. GATK4's Python-backed tools shell
+    # out to a bundled script at runtime using whatever `python` is first
+    # on PATH, which is this env's (see %environment below), so pytorch
+    # has to live here rather than in its own isolated env for GATK to
+    # find it.
+    #
+    # Versions pinned to match Broad's own scripts/gatkcondaenv.yml.template
+    # for 4.6.2.0 exactly (numpy=1.26.2, pytorch=2.1.0, pytorch-lightning=
+    # 2.4.0) rather than left to the solver: this isn't just "a new
+    # package", it's matching the exact environment GATK's bundled Python
+    # code (see below) was built and tested against. numpy in particular
+    # matters — pytorch 2.1.0 was built against numpy's 1.x ABI, and an
+    # unpinned numpy resolves to 2.x here, which risks silent breakage
+    # rather than a clean error. `pytorch-cpu` (conda-forge's CPU-only
+    # metapackage, not the `pytorch` channel's `cpuonly` — that package
+    # isn't available from conda-forge/bioconda, which is all we use):
+    # this container has no GPU passthrough set up, and an unconstrained
+    # pytorch install pulls in the full CUDA toolkit (several extra GB)
+    # for no benefit here. Unlike VEP's samtools pin,
+    # there's no known hard version conflict between this ML stack and
+    # this env's other packages, so no isolation trick is needed here.
     micromamba create -y -p /opt/env -c conda-forge -c bioconda \
         python=3.11 \
+        pip \
         fastqc \
         multiqc \
         bwa \
@@ -39,12 +77,36 @@ From: ubuntu:22.04
         bcftools \
         htslib \
         tabix \
-        gatk4 \
+        gatk4=4.6.2.0 \
+        numpy=1.26.2 \
+        pytorch-cpu=2.1.0 \
+        pytorch-lightning=2.4.0 \
+        biopython \
         nextflow \
         pysam \
         pandas \
-        numpy \
         matplotlib
+
+    # --- GATK's own bundled Python package, for NVScoreVariants ---
+    # The actual Python module NVScoreVariants imports at runtime
+    # ("scorevariants", plus its sibling "gatktool"/"gcnvkernel") isn't on
+    # PyPI or conda — it ships only inside GATK's official release zip as
+    # a small prebuilt archive (gatkPythonPackageArchive.zip, ~120KB, pure
+    # Python — no compiled deps of its own, per its setup.py). bioconda's
+    # gatk4 package (jar + wrapper script only) doesn't include it, which
+    # is exactly why NVScoreVariants failed with "A required Python
+    # package (scorevariants) could not be imported" before this was
+    # added. Verified by inspecting the archive directly: scorevariants'
+    # own code imports only torch, pytorch_lightning, numpy, Bio
+    # (biopython), and pysam — all pinned/added above — nothing further
+    # needed (the gcnvkernel package bundled alongside it is for a
+    # different GATK tool (gCNV) we don't use, so its extra deps
+    # (pymc/pytensor/h5py/etc.) are deliberately not installed here).
+    curl -Ls -o /tmp/gatk-4.6.2.0.zip \
+        https://github.com/broadinstitute/gatk/releases/download/4.6.2.0/gatk-4.6.2.0.zip
+    unzip -j /tmp/gatk-4.6.2.0.zip 'gatk-4.6.2.0/gatkPythonPackageArchive.zip' -d /tmp
+    /opt/env/bin/pip install /tmp/gatkPythonPackageArchive.zip
+    rm -f /tmp/gatk-4.6.2.0.zip /tmp/gatkPythonPackageArchive.zip
 
     # --- Env 2: R / Bioconductor (data processing, plotting, GRanges) ---
     micromamba create -y -p /opt/r-env -c conda-forge -c bioconda \
@@ -116,7 +178,9 @@ EOF
 
 %runscript
     echo "Rare Disease Hackathon container. Tools: fastqc, multiqc, bwa, samtools,"
-    echo "picard, bcftools, gatk4, ensembl-vep, nextflow, python(pysam/pandas), R(ggplot2/GenomicRanges)."
+    echo "picard, bcftools, gatk4 (+pytorch/pytorch-lightning/scorevariants for"
+    echo "NVScoreVariants), ensembl-vep,"
+    echo "nextflow, python(pysam/pandas), R(ggplot2/GenomicRanges)."
     exec "$@"
 
 %help
