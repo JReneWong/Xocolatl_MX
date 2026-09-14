@@ -184,7 +184,7 @@ process nvscore {
     script:
     bam_file = bam.find { it.name.endsWith('.bam') }
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "nvscore.vcf.gz"
+    vcf_out = "cnn_scored.vcf.gz"
     """
     gatk NVScoreVariants -I ${bam_file} -V ${vcf_file} \
         -R ${ref_genome}/${params.ref_genome_file} \
@@ -205,8 +205,9 @@ process vcf_filter {
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "filtered.vcf.gz"
+    vcf_out = "filtered.PASS.vcf.gz"
     """
+    # @TODO: check condition (make sure input has "PASS")
     bcftools filter -i 'FILTER="PASS" || FILTER="." ' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
@@ -214,7 +215,7 @@ process vcf_filter {
 }
 
 process vep_annotation {
-    tag "${vcf.simpleName}"
+    tag "${vcf_file.simpleName}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
@@ -251,8 +252,31 @@ process vep_annotation {
     """
 }
 
+process split_vep {
+    tag "${vcf_file.simpleName}"
+
+    // publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    path(vcf)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "splitvep-${vcf_file.name}"
+    """
+    bcftools +split-vep -c Consequence,IMPACT,SYMBOL,Gene,SIFT,PolyPhen,ClinVar_CLNSIG,Existing_variation,gnomAD_AF \
+        -s worst -p vep '${vcf_file}' \
+        | bcftools annotate -x 'INFO/CSQ' \
+        -Oz -o '${vcf_out}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
 process lowfreqvar {
-    tag "${vcf.simpleName}"
+    tag "${vcf_file.simpleName}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
@@ -264,13 +288,62 @@ process lowfreqvar {
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "rarevars-vep.PASS.vcf.gz"
+    vcf_out = "rarevars-${vcf_file.name}"
     """
-    bcftools +split-vep -c Consequence,IMPACT,SYMBOL,Gene,SIFT,PolyPhen,ClinVar_CLNSIG,Existing_variation,gnomAD_AF \
-        -s worst -p vep '${vcf_file}' \
-        | bcftools annotate -x 'INFO/CSQ' \
-        | bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
-        --threads ${task.cpus} -Oz -o '${vcf_out}'
+    bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
+process synonymous_mutations {
+    tag "${vcf_file.simpleName}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    path(vcf)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "functional-${vcf_file.name}"
+    """
+    bcftools view \
+        -i 'INFO/vepConsequence ~ "missense_variant" || \
+        INFO/vepConsequence ~ "frameshift_variant" || \
+        INFO/vepConsequence ~ "stop_gained" || \
+        INFO/vepConsequence ~ "stop_lost" || \
+        INFO/vepConsequence ~ "start_lost" || \
+        INFO/vepConsequence ~ "splice_acceptor_variant" || \
+        INFO/vepConsequence ~ "splice_donor_variant" || \
+        INFO/vepConsequence ~ "splice_region_variant" || \
+        INFO/vepConsequence ~ "inframe_insertion" || \
+        INFO/vepConsequence ~ "inframe_deletion"' \
+        -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
+process sift_polyphen {
+    tag "${vcf_file.simpleName}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    path(vcf)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "sift_polyphen_filtered-${vcf_file.name}"
+    """
+    bcftools view -e 'INFO/vepSIFT~"tolerated" || INFO/vepPolyPhen="benign"' \
+        -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
@@ -341,7 +414,10 @@ workflow vcf {
         file(params.clinvar_dir),
         file(params.dbsnp_dir)
     )
-    lowfreqvar(vep_annotation.out)
+    split_vep(vep_annotation.out)
+    lowfreqvar(split_vep.out)
+    synonymous_mutations(lowfreqvar.out)
+    sift_polyphen(synonymous_mutations.out)
 }
 
 workflow {
