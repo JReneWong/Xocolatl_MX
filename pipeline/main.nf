@@ -177,6 +177,8 @@ process nvscore {
     path(bam)
     path(vcf)
     path(ref_genome)
+    path(dbsnp)
+    path(known_sites)
 
     output:
     path("${vcf_out}{,.tbi}")
@@ -184,13 +186,19 @@ process nvscore {
     script:
     bam_file = bam.find { it.name.endsWith('.bam') }
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "cnn_scored.vcf.gz"
+    vcf_out = "cnn_filter.vcf.gz"
     """
     gatk NVScoreVariants -I ${bam_file} -V ${vcf_file} \
         -R ${ref_genome}/${params.ref_genome_file} \
         -tensor-type read_tensor \
+        -O cnn_scored.vcf.gz
+    bcftools index -t --threads ${task.cpus} cnn_scored.vcf.gz
+    gatk FilterVariantTranches -V cnn_scored.vcf.gz --info-key CNN_2D \
+        --snp-tranche 99.95 --indel-tranche 99.4 \
+        --resource ${dbsnp}/${params.dbsnp_file} \
+        --resource ${known_sites}/${params.known_indels_file} \
+        --resource ${known_sites}/${params.mills_file} \
         -O ${vcf_out}
-    bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
 
@@ -207,8 +215,7 @@ process vcf_filter {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "filtered.PASS.vcf.gz"
     """
-    # @TODO: check condition (make sure input has "PASS")
-    bcftools filter -i 'FILTER="PASS" || FILTER="." ' \
+    bcftools filter -i 'FILTER="PASS"' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
@@ -392,7 +399,9 @@ workflow preprocess {
     nvscore(
         mark_duplicates.out[0],
         merge_vcfs.out[0],
-        file(params.ref_genome_dir)
+        file(params.ref_genome_dir),
+        file(params.dbsnp_dir),
+        file(params.known_sites_dir)
     )
 }
 
