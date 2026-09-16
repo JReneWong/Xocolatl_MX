@@ -25,21 +25,11 @@ references/
 # each teammate keeps their own local copy instead of versioning it.
 Challenge_*.docx
 
-# results/ — internal working output only, never tracked. This covers every
-# module's results/ under Re-calling_Pipeline/, VCF_pipeline/, and the
-# top-level rollup dir, at any depth. Reverses an earlier convention (this
-# project used to track manifests + small QC reports as the run record);
-# results/ derives from real patient sample data, so none of it — reports,
-# logs, or manifests — goes in version control, full stop. Keep only the
-# empty .gitkeep placeholders so `git clone` recreates the expected
-# directory skeleton.
-**/results/*
-!**/results/.gitkeep
-
-# 00N_Module/data — these are symlinks (just a path string) or plain
-# documentation stubs (see each module's data/README.txt), not the data
-# itself, so they ARE tracked; the real files they point at are already
-# excluded above (InitialData/, references/).
+# Top-level results/ — final deliverable rollups only (small tables/figures
+# for the write-up), not per-module working output. See pipeline/ below for
+# that.
+results/*
+!results/.gitkeep
 
 # Python
 __pycache__/

@@ -5,22 +5,22 @@ nextflow.enable.dsl=2
 process fastqc {
     tag "${sample_id}"
 
-    publishDir "${params.outdir}/fastqc", mode: "copy"
+    publishDir "${params.outdir}/qc", mode: "copy"
 
     input:
-    tuple val(sample_id), path(gz_file)
+    tuple val(sample_id), path(fastqs)
     
     output:
-    path("${sample_id}_fastqc.zip")
+    path("*_fastqc.zip")
 
     script:
     """
-    fastqc --threads ${task.cpus} ${gz_file}
+    fastqc --threads ${task.cpus} ${fastqs[0]} ${fastqs[1]}
     """
 }
 
 process multiqc {
-    publishDir "${params.outdir}/multiqc", mode: "copy"
+    publishDir "${params.outdir}/qc", mode: "copy"
 
     input:
     path(fastqc_outs)
@@ -40,19 +40,20 @@ process alignment {
     // publishDir "${params.outdir}/bam", mode: "copy"
 
     input:
-    tuple val(sample_id), path(fastq1), path(fastq2)
+    tuple val(sample_id), val(lane), path(fastqs)
     path(ref_genome)
 
     output:
     path("${sample_id}.bam{,.bai}")
 
     script:
+    lane_str=lane.size() ? ".${lane}" : ""
+    RG="@RG\\tID:${sample_id}${lane_str}\\tSM:${sample_id}\\tPL:${params.platform}"
     """
-    RG=\$(split_id.sh ${sample_id} ${params.platform})
     # bwa index ${ref_genome} # Uncomment if skipped bwa index download
     bwa mem -t ${task.cpus} \
-        -R \$RG \
-        ${ref_genome}/${params.ref_genome_file} ${fastq1} ${fastq2} \
+        -R "${RG}" \
+        ${ref_genome}/${params.ref_genome_file} ${fastqs[0]} ${fastqs[1]} \
         | samtools view -b -o ${sample_id}_unsorted.bam
     samtools sort -@ ${task.cpus} -o ${sample_id}.bam ${sample_id}_unsorted.bam
     samtools index -@ ${task.cpus} ${sample_id}.bam
@@ -209,11 +210,11 @@ process vcf_filter {
     tuple val(id), path(vcf)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "filtered.PASS.vcf.gz"
+    vcf_out = "filtered-${id}.PASS.vcf.gz"
     """
     bcftools filter -i 'FILTER="PASS"' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
@@ -222,12 +223,12 @@ process vcf_filter {
 }
 
 process vep_annotation {
-    tag "${vcf_file.simpleName}"
+    tag "${id}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
     path(ref_genome)
     path(vep_cache)
     path(gnomad)
@@ -235,14 +236,14 @@ process vep_annotation {
     path(dbsnp)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     custom_clinvar = "--custom ${clinvar}/${params.clinvar_file},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
     custom_gnomad = "--custom ${gnomad}/${params.gnomad_file},gnomAD,vcf,exact,0,FLAG,AF"
     custom_dbsnp = "--custom ${dbsnp}/${params.dbsnp_file},dbSNP,vcf,exact,0,"
-    vcf_out = "vep.PASS.vcf.gz"
+    vcf_out = "vep-${id}.PASS.vcf.gz"
     """
     # @TODO: move params to config file
     vep -i ${vcf_file} \
@@ -260,19 +261,19 @@ process vep_annotation {
 }
 
 process split_vep {
-    tag "${vcf_file.simpleName}"
+    tag "${id}"
 
     // publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "splitvep-${vcf_file.name}"
+    vcf_out = "splitvep-${id}.PASS.vcf.gz"
     """
     bcftools +split-vep -c Consequence,IMPACT,SYMBOL,Gene,SIFT,PolyPhen,ClinVar_CLNSIG,Existing_variation,gnomAD_AF \
         -s worst -p vep '${vcf_file}' \
@@ -283,19 +284,19 @@ process split_vep {
 }
 
 process lowfreqvar {
-    tag "${vcf_file.simpleName}"
+    tag "${id}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "rarevars-${vcf_file.name}"
+    vcf_out = "rarevars-${id}.PASS.vcf.gz"
     """
     bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
@@ -304,19 +305,19 @@ process lowfreqvar {
 }
 
 process synonymous_mutations {
-    tag "${vcf_file.simpleName}"
+    tag "${id}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "functional-${vcf_file.name}"
+    vcf_out = "functional-${id}.PASS.vcf.gz"
     """
     bcftools view \
         -i 'INFO/vepConsequence ~ "missense_variant" || \
@@ -335,19 +336,19 @@ process synonymous_mutations {
 }
 
 process sift_polyphen {
-    tag "${vcf_file.simpleName}"
+    tag "${id}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
 
     input:
-    path(vcf)
+    tuple val(id), path(vcf)
 
     output:
-    path("${vcf_out}{,.tbi}")
+    tuple val(id), path("${vcf_out}{,.tbi}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "sift_polyphen_filtered-${vcf_file.name}"
+    vcf_out = "sift_polyphen_filtered-${id}.PASS.vcf.gz"
     """
     bcftools view -e 'INFO/vepSIFT~"tolerated" || INFO/vepPolyPhen="benign"' \
         -Oz -o '${vcf_out}' '${vcf_file}'
@@ -356,8 +357,9 @@ process sift_polyphen {
 }
 
 workflow qc {
-    Channel.fromPath("${params.fastqDir}/*.fastq.gz")
-        .map { file -> record(id: file.simpleName, fastq: file) }
+    Channel.of(file(params.fastq_samplesheet))
+        .flatMap { csv -> csv.splitCsv(header: true) }
+        .map { row -> [row.id, [file(row.fastq1), file(row.fastq2)]] }
         .set { fastq_ch }
 
     fastqc(fastq_ch)
@@ -366,10 +368,12 @@ workflow qc {
 }
 
 workflow preprocess {
-    Channel.fromFilePairs("${params.fastqDir}/*_{R1,R2}*.fastq.gz", flat: true)
-        .set { fastq_pairs_ch }
+    Channel.of(file(params.fastq_samplesheet))
+        .flatMap { csv -> csv.splitCsv(header: true) }
+        .map { row -> [row.id, row.lane, [file(row.fastq1), file(row.fastq2)]] }
+        .set { fastq_ch }
 
-    alignment(fastq_pairs_ch, file(params.ref_genome_dir))
+    alignment(fastq_ch, file(params.ref_genome_dir))
     merge_bams(alignment.out.collect()) // all bams, only one patient
     mark_duplicates(merge_bams.out[0])
 
@@ -411,7 +415,9 @@ workflow recalling{
 }
 
 workflow vcf {
-    Channel.fromFilePairs("${params.vcf_file}{,.tbi}", flat: false, size: -1)
+    Channel.of(file(params.vcf_samplesheet))
+        .flatMap { csv -> csv.splitCsv(header: true) }
+        .map { row -> [row.id, [file(row.vcf), file(row.index)]] }
         .set { vcf_ch }
     
     vcf_filter(vcf_ch)
