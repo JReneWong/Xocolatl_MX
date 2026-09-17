@@ -178,7 +178,6 @@ process nvscore {
     path(bam)
     path(vcf)
     path(ref_genome)
-    path(dbsnp)
     path(known_sites)
 
     output:
@@ -187,7 +186,7 @@ process nvscore {
     script:
     bam_file = bam.find { it.name.endsWith('.bam') }
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "cnn_filter.vcf.gz"
+    vcf_out = "cnn_filter.PASS.vcf.gz"
     """
     gatk NVScoreVariants -I ${bam_file} -V ${vcf_file} \
         -R ${ref_genome}/${params.ref_genome_file} \
@@ -195,11 +194,39 @@ process nvscore {
         -O cnn_scored.vcf.gz
     bcftools index -t --threads ${task.cpus} cnn_scored.vcf.gz
     gatk FilterVariantTranches -V cnn_scored.vcf.gz --info-key CNN_2D \
-        --snp-tranche 99.95 --indel-tranche 99.4 \
-        --resource ${dbsnp}/${params.dbsnp_file} \
-        --resource ${known_sites}/${params.known_indels_file} \
+        --snp-tranche ${params.nvscore.snp_tranche} --indel-tranche ${params.nvscore.indel_tranche} \
+        --resource ${known_sites}/${params.hapmap_file} \
         --resource ${known_sites}/${params.mills_file} \
-        -O ${vcf_out}
+        --invalidate-previous-filters \
+        -O cnn_filter.vcf.gz
+    bcftools view -i 'FILTER="PASS"' \
+        --threads ${task.cpus} -Oz -o ${vcf_out} cnn_filter.vcf.gz
+    bcftools index -t --threads ${task.cpus} ${vcf_out}
+    """
+}
+
+process variant_filtration {
+    publishDir "${params.outdir}/variant_filtration", mode: "copy"
+
+    input:
+    path(vcf)
+    path(genome)
+
+    output:
+    path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "filtered.vcf.gz"
+    """
+    gatk VariantFiltration -V ${vcf_file} \
+        -R ${genome}/${params.ref_genome_file} \
+        -O ${vcf_out} \
+        --filter-expression 'QD < 2.0' --filter-name QD2 \
+        --filter-expression 'MQ < 40.0' --filter-name MQ40 \
+        --filter-expression 'ReadPosRankSum < -8.0' --filter-name RPRS-8 \
+        --filter-expression 'FS > 60.0' --filter-name FS60 \
+        --filter-expression 'MQRankSum < -12.5' --filter-name MQRankSum-12.5
     """
 }
 
@@ -233,7 +260,7 @@ process vep_annotation {
     path(vep_cache)
     path(gnomad)
     path(clinvar)
-    path(dbsnp)
+    path(chrom_map)
 
     output:
     tuple val(id), path("${vcf_out}{,.tbi}")
@@ -242,7 +269,6 @@ process vep_annotation {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     custom_clinvar = "--custom ${clinvar}/${params.clinvar_file},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
     custom_gnomad = "--custom ${gnomad}/${params.gnomad_file},gnomAD,vcf,exact,0,FLAG,AF"
-    custom_dbsnp = "--custom ${dbsnp}/${params.dbsnp_file},dbSNP,vcf,exact,0,"
     vcf_out = "vep-${id}.PASS.vcf.gz"
     """
     # @TODO: move params to config file
@@ -251,11 +277,12 @@ process vep_annotation {
         --cache_version ${params.vep.cache_version} \
         --cache --dir ${vep_cache} --fasta ${ref_genome}/${params.ref_genome_file} \
         --species ${params.vep.species} --assembly ${params.vep.assembly}  \
-        ${custom_clinvar} ${custom_dbsnp} ${custom_gnomad} \
+        ${custom_clinvar} ${custom_gnomad} \
         --vcf -t SO --format vcf --buffer 50000 --offline --symbol \
         --compress_output bgzip --show_ref_allele --fork 6 --force_overwrite \
         --biotype --sift b --flag_pick_allele_gene --canonical --hgvs --shift_hgvs 1 \
-        --mane --numbers --protein --polyphen p --transcript_version --domains
+        --mane --numbers --protein --polyphen p --transcript_version --domains \
+        --synonyms ${chrom_map}
     tabix -f -p vcf ${vcf_out}
     """
 }
@@ -404,9 +431,10 @@ workflow preprocess {
         mark_duplicates.out[0],
         merge_vcfs.out[0],
         file(params.ref_genome_dir),
-        file(params.dbsnp_dir),
         file(params.known_sites_dir)
     )
+    variant_filtration(nvscore.out, file(params.ref_genome_dir))
+    
 }
 
 workflow recalling{
@@ -427,7 +455,7 @@ workflow vcf {
         file(params.vep_cache_dir),
         file(params.gnomad_dir),
         file(params.clinvar_dir),
-        file(params.dbsnp_dir)
+        file(params.chrom_map)
     )
     split_vep(vep_annotation.out)
     lowfreqvar(split_vep.out)

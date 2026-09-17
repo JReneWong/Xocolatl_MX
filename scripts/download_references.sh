@@ -61,12 +61,19 @@ rm -rf "$VEP_CACHE"
 
 # Download known sites VCF
 # 63MB
+echo "Downloading known indels VCF"
 KNOWN_INDELS_VCF="$REF_DIR/known_sites/Homo_sapiens_assembly38.known_indels.vcf.gz"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.known_indels.vcf.gz" "$KNOWN_INDELS_VCF"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Homo_sapiens_assembly38.known_indels.vcf.gz.tbi" "$KNOWN_INDELS_VCF.tbi"
 # 22MB
+echo "Downloading Mills VCF"
 MILLS_VCF="$REF_DIR/known_sites/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz" "$MILLS_VCF"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz.tbi" "$MILLS_VCF.tbi"
+# 62MB
+echo "Downloading HapMap VCF"
+HAPMAP_VCF="$REF_DIR/known_sites/HapMap_3.3.hg38.vcf.gz"
+download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/hapmap_3.3.hg38.vcf.gz" "$HAPMAP_VCF"
+download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/hapmap_3.3.hg38.vcf.gz.tbi" "$HAPMAP_VCF.tbi"
 
 echo "Done"

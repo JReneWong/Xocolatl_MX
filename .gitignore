@@ -1,10 +1,15 @@
-# Data — never commit, each teammate downloads independently. Anchored to
-# repo root (leading /) — a bare "data/" would also match every module's
-# 00N_Module/data/ (a real directory here, holding just a documentation
-# stub — see the note below), which is a different thing entirely and
-# needs to stay tracked.
-/data/
-InitialData/
+# Data — never commit, each teammate downloads independently
+data/*
+!data/references
+data/references/*
+!data/references/chrom_map.tsv
+!data/fastq
+data/fastq/*
+!data/fastq/samplesheet.template.csv
+!data/vcf
+data/vcf/*
+!data/vcf/samplesheet.template.csv
+
 *.fastq.gz
 *.vcf
 *.vcf.gz
@@ -15,7 +20,6 @@ InitialData/
 *.fasta
 *.fa
 *.fa.fai
-references/
 
 # Container images — rebuild locally, don't version large binaries
 *.sif
