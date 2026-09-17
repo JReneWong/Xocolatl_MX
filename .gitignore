@@ -1,4 +1,4 @@
-# Data — never commit, each teammate downloads independently
+# Data — only include chrom map and samplesheet templates
 data/*
 !data/references
 data/references/*
