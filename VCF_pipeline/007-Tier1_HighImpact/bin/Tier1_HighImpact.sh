@@ -1,0 +1,1 @@
+bcftools view -i 'INFO/vepConsequence~"stop" || INFO/vepConsequence~"frameshift" || INFO/vepConsequence~"splice" || INFO/vepConsequence~"start_lost"' vep103_joint_germline_recalibrated.rare.vcf.gz --Oz -o ../Tier_1/vep103_joint_germline_recalibrated.rare_high_impact.vcf.gz

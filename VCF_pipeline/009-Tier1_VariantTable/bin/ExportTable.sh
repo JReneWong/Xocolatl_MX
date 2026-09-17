@@ -1,0 +1,1 @@
+bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/vepConsequence\t%INFO/vepIMPACT\t%INFO/vepSYMBOL\t%INFO/vepSIFT\t%INFO/vepPolyPhen\t%INFO/vepClinVar_CLNSIG\t%INFO/vepdbSNP\t%INFO/vepgnomAD_AF' -H vep103_joint_germline_recalibrated.rare_high_impact_gene_list.vcf.gz > tier_1_variants_unfiltered.txt
