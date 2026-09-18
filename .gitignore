@@ -3,6 +3,7 @@ data/*
 !data/references
 data/references/*
 !data/references/chrom_map.tsv
+!data/references/gene_list.txt
 !data/fastq
 data/fastq/*
 !data/fastq/samplesheet.template.csv

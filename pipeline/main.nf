@@ -267,8 +267,8 @@ process vep_annotation {
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    custom_clinvar = "--custom ${clinvar}/${params.clinvar_file},ClinVar,vcf,exact,0,CLNSIG,CLNREVSTAT"
-    custom_gnomad = "--custom ${gnomad}/${params.gnomad_file},gnomAD,vcf,exact,0,FLAG,AF"
+    custom_clinvar = "--custom file=${clinvar}/${params.clinvar_file},short_name=ClinVar,format=vcf,type=exact,coords=0,fields=CLNSIG%CLNREVSTAT"
+    custom_gnomad = "--custom file=${gnomad}/${params.gnomad_file},short_name=gnomAD,format=vcf,type=exact,coords=0,fields=AF"
     vcf_out = "vep-${id}.PASS.vcf.gz"
     """
     # @TODO: move params to config file
@@ -357,7 +357,7 @@ process synonymous_mutations {
         INFO/vepConsequence ~ "splice_region_variant" || \
         INFO/vepConsequence ~ "inframe_insertion" || \
         INFO/vepConsequence ~ "inframe_deletion"' \
-        -Oz -o '${vcf_out}' '${vcf_file}'
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
@@ -377,8 +377,81 @@ process sift_polyphen {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "sift_polyphen_filtered-${id}.PASS.vcf.gz"
     """
-    bcftools view -e 'INFO/vepSIFT~"tolerated" || INFO/vepPolyPhen="benign"' \
-        -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools view -e 'INFO/vepSIFT ~ "tolerated" || INFO/vepPolyPhen = "benign"' \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
+process high_impact {
+    tag "${id}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf)
+
+    output:
+    tuple val(id), path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "high_impact-${id}.PASS.vcf.gz"
+    """
+    bcftools view \
+        -i 'INFO/vepConsequence ~ "stop" || \
+        INFO/vepConsequence ~ "frameshift" || \
+        INFO/vepConsequence ~ "splice_donor_variant" || \
+        INFO/vepConsequence ~ "splice_acceptor_variant" || \
+        INFO/vepConsequence ~ "start_lost"' \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
+process moderate_impact {
+    tag "${id}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf)
+
+    output:
+    tuple val(id), path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "moderate_impact-${id}.PASS.vcf.gz"
+    """
+    bcftools view \
+        -i 'INFO/vepConsequence ~ "missense_variant" || \
+        INFO/vepConsequence ~ "inframe_insertion" || \
+        INFO/vepConsequence ~ "inframe_deletion"' \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
+process gene_filter {
+    tag "${id}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf)
+    path(gene_list)
+
+    output:
+    tuple val(id), path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "gene_list-${vcf_file.name}"
+    """
+    FILTER="\$(awk '{printf sep "INFO/vepSYMBOL=\\"%s\\"", \$1; sep=" || "}' \"${gene_list}\")"
+    bcftools view -i "\$FILTER" \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
@@ -434,7 +507,7 @@ workflow preprocess {
         file(params.known_sites_dir)
     )
     variant_filtration(nvscore.out, file(params.ref_genome_dir))
-    
+
 }
 
 workflow recalling{
@@ -461,6 +534,11 @@ workflow vcf {
     lowfreqvar(split_vep.out)
     synonymous_mutations(lowfreqvar.out)
     sift_polyphen(synonymous_mutations.out)
+
+    high_impact(sift_polyphen.out)
+    moderate_impact(sift_polyphen.out)
+    
+    gene_filter(high_impact.out, file(params.gene_list))
 }
 
 workflow {
