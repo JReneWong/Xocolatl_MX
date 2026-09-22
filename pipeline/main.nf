@@ -3,12 +3,12 @@
 nextflow.enable.dsl=2
 
 process fastqc {
-    tag "${sample_id}"
+    tag "${id}"
 
     publishDir "${params.outdir}/qc", mode: "copy"
 
     input:
-    tuple val(sample_id), path(fastqs)
+    tuple val(id), path(fastqs)
     
     output:
     path("*_fastqc.zip")
@@ -35,7 +35,7 @@ process multiqc {
 }
 
 process alignment {
-    tag "${sample_id}"
+    tag "${id}"
 
     // publishDir "${params.outdir}/bam", mode: "copy"
 
@@ -44,19 +44,20 @@ process alignment {
     path(ref_genome)
 
     output:
-    path("${sample_id}.bam{,.bai}")
+    path("${id}.bam{,.bai}")
 
     script:
     lane_str=lane.size() ? ".${lane}" : ""
-    RG="@RG\\tID:${sample_id}${lane_str}\\tSM:${sample_id}\\tPL:${params.platform}"
+    id = "${sample_id}${lane_str}"
+    RG="@RG\\tID:${id}\\tSM:${sample_id}\\tPL:${params.platform}"
     """
     # bwa index ${ref_genome} # Uncomment if skipped bwa index download
     bwa mem -t ${task.cpus} \
         -R "${RG}" \
         ${ref_genome}/${params.ref_genome_file} ${fastqs[0]} ${fastqs[1]} \
-        | samtools view -b -o ${sample_id}_unsorted.bam
-    samtools sort -@ ${task.cpus} -o ${sample_id}.bam ${sample_id}_unsorted.bam
-    samtools index -@ ${task.cpus} ${sample_id}.bam
+        | samtools view -b -o ${id}_unsorted.bam
+    samtools sort -@ ${task.cpus} -o ${id}.bam ${id}_unsorted.bam
+    samtools index -@ ${task.cpus} ${id}.bam
     """
 }
 
@@ -325,7 +326,9 @@ process lowfreqvar {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "rarevars-${id}.PASS.vcf.gz"
     """
-    bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
+    # bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
+    #    --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools view -i 'INFO/vepgnomAD_AF < ${params.af_threshold}' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
@@ -383,6 +386,28 @@ process sift_polyphen {
     """
 }
 
+process normalize {
+    tag "${id}"
+
+    publishDir "${params.outdir}/vep", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf)
+    path(ref_genome)
+
+    output:
+    tuple val(id), path("${vcf_out}{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    vcf_out = "normalized-${id}.PASS.vcf.gz"
+    """
+    bcftools norm -f ${ref_genome}/${params.ref_genome_file} -m -both \
+        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    """
+}
+
 process high_impact {
     tag "${id}"
 
@@ -393,10 +418,12 @@ process high_impact {
 
     output:
     tuple val(id), path("${vcf_out}{,.tbi}")
+    path("${table_out}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "high_impact-${id}.PASS.vcf.gz"
+    table_out = "high_impact-${id}.txt"
     """
     bcftools view \
         -i 'INFO/vepConsequence ~ "stop" || \
@@ -406,6 +433,7 @@ process high_impact {
         INFO/vepConsequence ~ "start_lost"' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/vepConsequence\t%INFO/vepIMPACT\t%INFO/vepSYMBOL\t%INFO/vepSIFT\t%INFO/vepPolyPhen\t%INFO/vepClinVar_CLNSIG\t%INFO/vepExisting_variation\t%INFO/vepgnomAD_AF[\t%GT\t%AD\t%DP]\n' -H ${vcf_out} > ${table_out}
     """
 }
 
@@ -419,10 +447,12 @@ process moderate_impact {
 
     output:
     tuple val(id), path("${vcf_out}{,.tbi}")
+    path("${table_out}")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "moderate_impact-${id}.PASS.vcf.gz"
+    table_out = "moderate_impact-${id}.txt"
     """
     bcftools view \
         -i 'INFO/vepConsequence ~ "missense_variant" || \
@@ -430,6 +460,7 @@ process moderate_impact {
         INFO/vepConsequence ~ "inframe_deletion"' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
+    bcftools query -f '%CHROM\t%POS\t%REF\t%ALT\t%INFO/vepConsequence\t%INFO/vepIMPACT\t%INFO/vepSYMBOL\t%INFO/vepSIFT\t%INFO/vepPolyPhen\t%INFO/vepClinVar_CLNSIG\t%INFO/vepExisting_variation\t%INFO/vepgnomAD_AF[\t%GT\t%AD\t%DP]\n' -H ${vcf_out} > ${table_out}
     """
 }
 
@@ -449,7 +480,7 @@ process gene_filter {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "gene_list-${vcf_file.name}"
     """
-    FILTER="\$(awk '{printf sep "INFO/vepSYMBOL=\\"%s\\"", \$1; sep=" || "}' \"${gene_list}\")"
+    FILTER="\$(awk '{printf sep "INFO/vepGene=\\"%s\\"", \$1; sep=" || "}' \"${gene_list}\")"
     bcftools view -i "\$FILTER" \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
@@ -535,10 +566,15 @@ workflow vcf {
     synonymous_mutations(lowfreqvar.out)
     sift_polyphen(synonymous_mutations.out)
 
+    // normalize(sift_polyphen.out, file(params.ref_genome_dir))
+
     high_impact(sift_polyphen.out)
     moderate_impact(sift_polyphen.out)
-    
-    gene_filter(high_impact.out, file(params.gene_list))
+
+    high_impact.out[0].mix(moderate_impact.out[0])
+        .set { tiers_ch }
+
+    gene_filter(tiers_ch, file(params.gene_list))
 }
 
 workflow {
