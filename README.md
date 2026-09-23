@@ -182,4 +182,4 @@ Run the workflow from the repo's root directory using your desired `-profile`. F
 nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
-**Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM and apptainer instead.
+**Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM instead.
