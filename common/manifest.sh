@@ -12,15 +12,20 @@
 # enough to know exactly which file was used.
 
 # Usage: CONTAINER="$(resolve_container "$PROJECT_ROOT")"
-# The .sif is arch-specific (container/hackathon_<arch>.sif) — the team
+#    or: CONTAINER="$(resolve_container "$PROJECT_ROOT" "shapeit")"
+# The .sif is arch-specific (container/<base_name>_<arch>.sif) — the team
 # builds on both Apple Silicon Macs (via the Lima VM, arm64) and x86_64
 # Linux, and a .sif built for one arch cannot run on the other
-# ("the image's architecture ... could not run on the host's").
+# ("the image's architecture ... could not run on the host's"). base_name
+# defaults to "hackathon" (the main pipeline container) so every existing
+# call site keeps working unchanged; pass a second arg to resolve a
+# different container built the same arch-specific way (e.g. "shapeit").
 resolve_container() {
     local project_root="$1"
+    local base_name="${2:-hackathon}"
     case "$(uname -m)" in
-        x86_64)  echo "$project_root/container/hackathon_amd64.sif" ;;
-        aarch64) echo "$project_root/container/hackathon_arm64.sif" ;;
+        x86_64)  echo "$project_root/container/${base_name}_amd64.sif" ;;
+        aarch64) echo "$project_root/container/${base_name}_arm64.sif" ;;
         *) echo "Unsupported architecture: $(uname -m)" >&2; return 1 ;;
     esac
 }
