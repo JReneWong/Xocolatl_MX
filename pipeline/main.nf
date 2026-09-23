@@ -326,6 +326,7 @@ process lowfreqvar {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "rarevars-${id}.PASS.vcf.gz"
     """
+    # If using gnomAD not filtered to only lof+missense variants, consider including INFO/vepgnomAD_AF="."
     # bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
     #    --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools view -i 'INFO/vepgnomAD_AF < ${params.af_threshold}' \

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-input_dir="$1" # dir with gnomad .vcf.bgz files
+input_dir="$1" # dir with gnomad 4.1.1 .vcf.bgz files
 output_dir="${2:-.}"
 
 for input_file in "$input_dir"/*.vcf.bgz; do
@@ -27,9 +27,12 @@ for input_file in "$input_dir"/*.vcf.bgz; do
     echo "Wrote to $output_file"
 done
 
-# files=()
-# for chr in {1..22} X Y; do
-#   files+=( "$output_dir"/*.chr$chr.lof_missense.vcf.bgz )
-# done
+files=()
+for chr in {1..22} X Y; do
+  files+=( "$output_dir"/*.chr$chr.lof_missense.vcf.bgz )
+done
 
-# bcftools concatenate --write-index="tbi" "${files[@]}" -o "$output_dir/concatenated.lof_missense.vcf.bgz"
+bcftools concatenate --write-index="tbi" "${files[@]}" -o "$output_dir/gnomad.genomes.v4.1.1.sites.lof_missense.vcf.bgz"
+
+bcftools view -i 'FILTER="PASS"' "$output_dir/gnomad.genomes.v4.1.1.sites.lof_missense.vcf.bgz" -o "$output_dir/gnomad.genomes.v4.1.1.sites.lof_missense.PASS.vcf.bgz"
+bcftools index -t "$output_dir/gnomad.genomes.v4.1.1.sites.lof_missense.PASS.vcf.bgz"

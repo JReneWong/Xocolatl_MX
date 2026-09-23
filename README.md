@@ -128,7 +128,17 @@ This includes:
 - dbSNP from **Broad Institute's public GATK resource bundle** (~1.6GB)
 - ClinVar from **NCBI** (184MB)
 - VEP cache from **ENSEMBL** (~26GB)
-- Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB)
+- Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB + ~62MB)
+
+### 4c. Compute reference gnomAD
+
+We filter gnomAD v4.1.1 genomes vcf files only to variants annotated with LoF or missense (vep `Consequence` has any of `splice_acceptor_variant`, `splice_donor_variant `, `stop_gained`, `frameshift_variant`, `transcript_ablation`, `missense_variant`, `inframe_insertion`, `inframe_deletion`, `stop_lost`, `start_lost`) and `FILTER="PASS"`.
+
+The script for this filtering is included as `scripts/filter_gnomad_vcf.sh`. Make sure to move the output file to `data/references/gnomad`.
+
+Given the size of the vcf files, we performed this filtering by mounting a Google Cloud Storage Bucket with GCSFuse.
+
+If you use a different gnomAD vcf, make sure to update the path in the `nextflow.config` file and potentially update the `lowfreqvar` process in the pipeline.
 
 ### 5. Run the pipeline
 
@@ -138,27 +148,38 @@ Default configuration and profiles are defined in `pipeline/nextflow.config`, yo
 
 The configuration provides three different profiles to run the pipeline, `apptainer` to use a container image, and `micromamba` and `conda` to use virtual environments.
 
-Run the pipeline as
+The pipeline contains two main workflows: `recalling` and `vcf`.
 
-```bash
-# Nextflow will use the container image built in the previous steps
-nextflow run pipeline/main.nf -profile apptainer
+The `recalling` workflow takes as input fastq files. It performs:
+1. QC
+2. Alignment
+3. Mark duplicates
+4. Haplotype calling
+5. NVScoring and tranche filtering
+6. Variant filtration
+
+The input for the `recalling` workflow is a samplesheet as defined in `data/fastq/samplesheet.template.csv`. Create a `data/fastq/samplesheet.csv` file defining all input fastq files. The `lane` value is optional, however the full id for each pair of fastq's is composed of the `id` and `lane` values, so if there is no `lane` value, make sure all `id`s are unique.
+
+Run the workflow from the repo's root directory using your desired `-profile`. For example,
+```sh
+nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
-or
+The `vcf` workflow takes as input vcf files. It performs:
+1. Filtering
+2. VEP annotation
+3. Filtering to low frequency variants
+4. Filtering to lof+missense variants
+5. Filtering by SIFT and PolyPhen
+6. Subset to high impact and moderate impact
 
-```bash
-# Nextflow will create the virtual environments as required
-# replace `micromamba` for `conda` if you're using conda
-nextflow run pipeline/main.nf -profile micromamba
+We run the vcf workflow with both the provided dataset's vcf file, and our recalling output vcf.
+
+Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files.
+
+Run the workflow from the repo's root directory using your desired `-profile`. For example,
+```sh
+nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
-The default entrypoint for the pipeline runs everything.
-
-Run specific workflows with `-entry WORKFLOW_NAME`.
-
-Specify parameters in the command line by adding `--param_name my_param_value`.
-E.g.
-```bash
-nextflow run pipeline/main.nf -profile apptainer --fastqDir /path/to/dir_with_fastqs/
-```
+**Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM and apptainer instead.
