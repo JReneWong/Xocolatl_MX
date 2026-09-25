@@ -183,3 +183,15 @@ nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
 **Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM instead.
+
+
+WIP: phasing workflow
+There's an additional workflow to perform phasing using shapeit5
+Download a reference panel from https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/
+
+The tools is available using either the apptainer or docker profiles. Build the image given the `.def` or `.Dockerfile` files at `data/container`. If using MacOS, build the docker image with `--platform linux/amd64`.
+
+Populate a `data/phasing/samplesheet.csv` file and run the workflow as
+```sh
+nextflow run pipeline/phasing.nf --flow shapeit -profile docker
+```

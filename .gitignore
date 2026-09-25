@@ -10,6 +10,9 @@ data/fastq/*
 !data/vcf
 data/vcf/*
 !data/vcf/samplesheet.template.csv
+!data/phasing
+data/phasing/*
+!data/phasing/samplesheet.template.csv
 
 *.fastq.gz
 *.vcf
