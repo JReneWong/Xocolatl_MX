@@ -30,6 +30,15 @@ RUN wget -q "https://archives.boost.io/release/${BOOST_VERSION}/source/boost_${B
     && ./bootstrap.sh --with-libraries=iostreams,program_options,serialization --prefix=../boost \
     && ./b2 install
 
+# bcftools
+WORKDIR /opt/src
+RUN  wget -q "https://github.com/samtools/bcftools/releases/download/1.24/bcftools-1.24.tar.bz2" \
+    && tar -xf "bcftools-1.24.tar.bz2" \
+    && mv "bcftools-1.24" bcftools && cd bcftools \
+    && ./configure --prefix=/opt/src/bcftools \
+    && make \
+    && make install
+
 # Shapeit5
 WORKDIR /opt/src
 RUN git clone --depth 1 --recurse-submodules https://github.com/odelaneau/shapeit.git
@@ -59,6 +68,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         zlib1g libbz2-1.0 liblzma5 libcurl4 libssl3 libdeflate0 \
     && rm -rf /var/lib/apt/lists/*
 
+COPY --from=builder /opt/src/bcftools/bin/* /usr/local/bin/
 COPY --from=builder /opt/src/shapeit/phase_common/bin/* /usr/local/bin/
 COPY --from=builder /opt/src/shapeit/phase_rare/bin/* /usr/local/bin/
 COPY --from=builder /opt/src/shapeit/resources/maps/b38 /usr/local/share/shapeit/maps/b38

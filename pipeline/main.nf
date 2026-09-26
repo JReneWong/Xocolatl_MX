@@ -387,28 +387,6 @@ process sift_polyphen {
     """
 }
 
-process normalize {
-    tag "${id}"
-
-    publishDir "${params.outdir}/vep", mode: "copy"
-
-    input:
-    tuple val(id), path(vcf)
-    path(ref_genome)
-
-    output:
-    tuple val(id), path("${vcf_out}{,.tbi}")
-
-    script:
-    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "normalized-${id}.PASS.vcf.gz"
-    """
-    bcftools norm -f ${ref_genome}/${params.ref_genome_file} -m -both \
-        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
-    bcftools index -t --threads ${task.cpus} '${vcf_out}'
-    """
-}
-
 process high_impact {
     tag "${id}"
 
@@ -566,8 +544,6 @@ workflow vcf {
     lowfreqvar(split_vep.out)
     synonymous_mutations(lowfreqvar.out)
     sift_polyphen(synonymous_mutations.out)
-
-    // normalize(sift_polyphen.out, file(params.ref_genome_dir))
 
     high_impact(sift_polyphen.out)
     moderate_impact(sift_polyphen.out)

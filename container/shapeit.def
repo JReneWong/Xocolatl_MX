@@ -33,6 +33,15 @@ Stage: build
     ./bootstrap.sh --with-libraries=iostreams,program_options,serialization --prefix=../boost
     ./b2 install
 
+    # bcftools
+    cd /opt/src
+    wget -q "https://github.com/samtools/bcftools/releases/download/1.24/bcftools-1.24.tar.bz2"
+    tar -xf "bcftools-1.24.tar.bz2"
+    mv "bcftools-1.24" bcftools && cd bcftools
+    ./configure --prefix=/opt/src/bcftools
+    make
+    make install
+
     # Shapeit5
     cd /opt/src
     git clone --depth 1 --recurse-submodules https://github.com/odelaneau/shapeit.git
@@ -64,6 +73,7 @@ From: ubuntu:22.04
 Stage: final
 
 %files from build
+    /opt/src/bcftools/bin/* /usr/local/bin/
     /opt/src/shapeit/phase_common/bin/* /usr/local/bin/
     /opt/src/shapeit/phase_rare/bin/* /usr/local/bin/
     /opt/src/shapeit/resources/maps/b38 /usr/local/share/shapeit/maps/b38
