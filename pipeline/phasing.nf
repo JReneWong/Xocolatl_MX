@@ -107,42 +107,81 @@ process shapeit_rare {
     """
 }
 
+process whatshap_phase {
+    tag "${id}"
+
+    publishDir "${params.outdir}/whatshap", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf), path(bam), val(region)
+    path(ref_genome)
+
+    output:
+    path("${id}-${region}.whatshap.vcf.gz{,.tbi}")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    bam_file = bam.find { it.name.endsWith('.bam') }
+    chromosome_str = region.size() ? "--chromosome "+(region.startsWith("chr") ? region : "chr${region}") : "" 
+    """
+    whatshap phase -o ${id}-${region}.whatshap.vcf.gz \
+        --reference ${ref_genome}/${params.ref_genome_file} \
+        ${chromosome_str} \
+        ${vcf_file} ${bam_file}
+    bcftools index -t --threads ${task.cpus} ${id}-${region}.whatshap.vcf.gz
+    """
+}
+
+workflow shapeit {
+    Channel.of(file(params.phasing_samplesheet))
+        .flatMap { csv -> csv.splitCsv(header: true) }
+        .set { input_ch }
+    
+    input_ch
+        .map { row -> [row.id, [file(row.vcf), file(row.vcf_index)], row.region] }
+        .set { norm_ch }
+    
+    input_ch
+        .map { row -> [row.id, [file(row.panel), file(row.panel_index)]] }
+        .set { meta_ch }
+    
+    normalize_and_filter(norm_ch, file(params.ref_genome_dir))
+
+    normalize_and_filter.out.join(meta_ch)
+        .set { shapeit_ch } // [id, [vcf], region, [panel]]
+
+    shapeit_common(shapeit_ch)
+
+    // Use phase_common output as scaffold for rare variants
+    // Note: fails with only one sample in the phased output
+
+    // shapeit_common.out.join(meta_ch)
+    //     .set { phased_ch } // [id, [phased], [panel]]
+    
+    // // Merge panel with phase_common output to use as scaffold for rare variants
+    // // as only one sample causes error "Segmentation fault"
+    // merge(phased_ch, "scaffold")
+
+    // normalize_and_filter.out.join(merge.out)
+    //     .set { scaffold_ch } // [id, [vcf], region, [scaffold]]
+
+    // // Note: merged scaffold triggers error "Different sets of samples across files"
+    // shapeit_rare(scaffold_ch, file(params.ref_genome_dir))
+}
+
+workflow whatshap {
+    Channel.of(file(params.phasing_samplesheet))
+        .flatMap { csv -> csv.splitCsv(header: true) }
+        .map { row -> [row.id, [file(row.vcf), file(row.vcf_index)], [file(row.bam), file(row.bam_index)], row.region] }
+        .set { input_ch }
+    
+    whatshap(input_ch, file(params.ref_genome_dir))
+}
+
 workflow {
     if (params.flow == "shapeit") {
-        Channel.of(file(params.phasing_samplesheet))
-            .flatMap { csv -> csv.splitCsv(header: true) }
-            .set { input_ch }
-        
-        input_ch
-            .map { row -> [row.id, [file(row.vcf), file(row.vcf_index)], row.region] }
-            .set { norm_ch }
-        
-        input_ch
-            .map { row -> [row.id, [file(row.panel), file(row.panel_index)]] }
-            .set { meta_ch }
-        
-        normalize_and_filter(norm_ch, file(params.ref_genome_dir))
-
-        normalize_and_filter.out.join(meta_ch)
-            .set { shapeit_ch } // [id, [vcf], region, [panel]]
-
-        shapeit_common(shapeit_ch)
-
-        // Use phase_common output as scaffold for rare variants
-        // Note: fails with only one sample in the phased output
-
-        // shapeit_common.out.join(meta_ch)
-        //     .set { phased_ch } // [id, [phased], [panel]]
-        
-        // // Merge panel with phase_common output to use as scaffold for rare variants
-        // // as only one sample causes error "Segmentation fault"
-        // merge(phased_ch, "scaffold")
-
-        // normalize_and_filter.out.join(merge.out)
-        //     .set { scaffold_ch } // [id, [vcf], region, [scaffold]]
-
-        // // Note: merged scaffold triggers error "Different sets of samples across files"
-        // shapeit_rare(scaffold_ch, file(params.ref_genome_dir))
-
+        shapeit()
+    } else if (params.flow == "whatshap") {
+        whatshap()
     }
 }

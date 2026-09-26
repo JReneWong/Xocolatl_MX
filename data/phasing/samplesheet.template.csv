@@ -1,2 +1,2 @@
-id,vcf,vcf_index,panel,panel_index,region
-sample_id,/path/to/file.vcf.gz,/path/to/file.vcf.gz.tbi,/path/to/panel.vcf.gz,/path/to/panel.vcf.gz.tbi,chr1
+id,vcf,vcf_index,panel,panel_index,bam,bam_index,region
+sample_id,/path/to/file.vcf.gz,/path/to/file.vcf.gz.tbi,/path/to/panel.vcf.gz,/path/to/panel.vcf.gz.tbi,/path/to/file.bam,/path/to/file.bam.bai,chr1
