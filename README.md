@@ -130,13 +130,11 @@ This includes:
 - VEP cache from **ENSEMBL** (~26GB)
 - Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB + ~62MB)
 
-### 4c. Compute reference gnomAD
+### 4c. Reference gnomAD
 
-We filter gnomAD v4.1.1 genomes vcf files only to variants annotated with LoF or missense (vep `Consequence` has any of `splice_acceptor_variant`, `splice_donor_variant `, `stop_gained`, `frameshift_variant`, `transcript_ablation`, `missense_variant`, `inframe_insertion`, `inframe_deletion`, `stop_lost`, `start_lost`) and `FILTER="PASS"`.
+We use a concatenated gnomAD v3.1.2 genomes vcf file that we store at `data/references/gnomad`.
 
-The script for this filtering is included as `scripts/filter_gnomad_vcf.sh`. Make sure to move the output file to `data/references/gnomad`.
-
-Given the size of the vcf files, we performed this filtering by mounting a Google Cloud Storage Bucket with GCSFuse.
+Given the size of the vcf files, we recommend concatenating or filtering by mounting a Google Cloud Storage Bucket with GCSFuse.
 
 If you use a different gnomAD vcf, make sure to update the path in the `nextflow.config` file and potentially update the `lowfreqvar` process in the pipeline.
 
@@ -147,6 +145,8 @@ The Nextflow pipeline's configuration and files live under `pipeline/`
 Default configuration and profiles are defined in `pipeline/nextflow.config`, you can modify them if needed.
 
 The configuration provides three different profiles to run the pipeline, `apptainer` to use a container image, and `micromamba` and `conda` to use virtual environments.
+
+Consider relative paths of files used by the pipeline are relative to the launch directory. We setup and recommend running the pipeline from the repo's root directory.
 
 The pipeline contains two main workflows: `recalling` and `vcf`.
 
@@ -175,7 +175,7 @@ The `vcf` workflow takes as input vcf files. It performs:
 
 We run the vcf workflow with both the provided dataset's vcf file, and our recalling output vcf.
 
-Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files.
+Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files (like the recalling workflow output if run).
 
 Run the workflow from the repo's root directory using your desired `-profile`. For example,
 ```sh
@@ -185,21 +185,21 @@ nextflow run pipeline/main.nf --flow recalling -profile conda
 **Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM instead.
 
 
-#### WIP: phasing workflows
-There are additional workflows to perform phasing using shapeit5 or whatshap
+#### Phasing workflows
+We include additional workflows to perform phasing using shapeit5 or whatshap.
 
 ##### shapeit
 Download a reference panel from https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/
 
 The tools is available using either the apptainer or docker profiles. Build the image given the `.def` or `.Dockerfile` files at `data/container`. If using MacOS, build the docker image with `--platform linux/amd64`.
 
-Populate a `data/phasing/samplesheet.csv` file (id, vcf, panel and region information) and run the workflow as
+Populate a `data/phasing/samplesheet.csv` file (`id`, `vcf`, `panel` and `region` information) and run the workflow as
 ```sh
 nextflow run pipeline/phasing.nf --flow shapeit -profile docker
 ```
 
 ##### whatshap
-Populate a `data/phasing/samplesheet.csv` file (id, vcf, bam and region information) and run the workflow as
+Populate a `data/phasing/samplesheet.csv` file (`id`, `vcf`, `bam` and `region` information) and run the workflow as
 ```sh
 nextflow run pipeline/phasing.nf --flow shapeit -profile conda
 ```

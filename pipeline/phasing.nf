@@ -151,22 +151,6 @@ workflow shapeit {
         .set { shapeit_ch } // [id, [vcf], region, [panel]]
 
     shapeit_common(shapeit_ch)
-
-    // Use phase_common output as scaffold for rare variants
-    // Note: fails with only one sample in the phased output
-
-    // shapeit_common.out.join(meta_ch)
-    //     .set { phased_ch } // [id, [phased], [panel]]
-    
-    // // Merge panel with phase_common output to use as scaffold for rare variants
-    // // as only one sample causes error "Segmentation fault"
-    // merge(phased_ch, "scaffold")
-
-    // normalize_and_filter.out.join(merge.out)
-    //     .set { scaffold_ch } // [id, [vcf], region, [scaffold]]
-
-    // // Note: merged scaffold triggers error "Different sets of samples across files"
-    // shapeit_rare(scaffold_ch, file(params.ref_genome_dir))
 }
 
 workflow whatshap {

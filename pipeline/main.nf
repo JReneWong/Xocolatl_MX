@@ -103,31 +103,6 @@ process mark_duplicates {
     """
 }
 
-process bqsr {
-    publishDir "${params.outdir}/bqsr", mode: "copy"
-
-    input:
-    path(bam)
-    path(ref_genome)
-    path(dbsnp)
-    path(known_sites)
-
-    output:
-    path("bqsr.bam{,.bai}")
-
-    script:
-    bam_file = bam.find { it.name.endsWith('.bam') }
-    """
-    gatk BaseRecalibrator -I ${bam_file} -O recal_data.table \
-        -R ${ref_genome}/${params.ref_genome_file} \
-        -known-sites ${dbsnp}/${params.dbsnp_file} \
-        -known-sites ${known_sites}/${params.known_indels_file} \
-        -known-sites ${known_sites}/${params.mills_file}
-    gatk ApplyBQSR -R ${ref_genome}/${params.ref_genome_file} \
-        -I ${bam_file} -O bqsr.bam --bqsr-recal-file recal_data.table \
-    """
-}
-
 process haplotype {
     tag "${bam_file.simpleName}_${contig}"
 
@@ -326,11 +301,11 @@ process lowfreqvar {
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
     vcf_out = "rarevars-${id}.PASS.vcf.gz"
     """
-    # If using gnomAD not filtered to only lof+missense variants, consider including INFO/vepgnomAD_AF="."
-    # bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
-    #    --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
-    bcftools view -i 'INFO/vepgnomAD_AF < ${params.af_threshold}' \
+    bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < ${params.af_threshold}' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+    # If using gnomAD filtered to only lof+missense variants, consider not including INFO/vepgnomAD_AF="."
+    # bcftools view -i 'INFO/vepgnomAD_AF < ${params.af_threshold}' \
+    #     --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
@@ -443,29 +418,6 @@ process moderate_impact {
     """
 }
 
-process gene_filter {
-    tag "${id}"
-
-    publishDir "${params.outdir}/vep", mode: "copy"
-
-    input:
-    tuple val(id), path(vcf)
-    path(gene_list)
-
-    output:
-    tuple val(id), path("${vcf_out}{,.tbi}")
-
-    script:
-    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "gene_list-${vcf_file.name}"
-    """
-    FILTER="\$(awk '{printf sep "INFO/vepGene=\\"%s\\"", \$1; sep=" || "}' \"${gene_list}\")"
-    bcftools view -i "\$FILTER" \
-        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
-    bcftools index -t --threads ${task.cpus} '${vcf_out}'
-    """
-}
-
 workflow qc {
     Channel.of(file(params.fastq_samplesheet))
         .flatMap { csv -> csv.splitCsv(header: true) }
@@ -486,16 +438,6 @@ workflow preprocess {
     alignment(fastq_ch, file(params.ref_genome_dir))
     merge_bams(alignment.out.collect()) // all bams, only one patient
     mark_duplicates(merge_bams.out[0])
-
-    // @TODO: implement optional process
-    // if (params.run_bqsr) {
-    //     bqsr(
-    //         mark_duplicates.out[0],
-    //         file(params.ref_genome_dir),
-    //         file(params.dbsnp_dir),
-    //         file(params.known_sites_dir)
-    //     )
-    // }
 
     // Define contigs for haplotype calling
     Channel.of(1..22,"X","Y","M")
@@ -550,8 +492,6 @@ workflow vcf {
 
     high_impact.out[0].mix(moderate_impact.out[0])
         .set { tiers_ch }
-
-    gene_filter(tiers_ch, file(params.gene_list))
 }
 
 workflow {

@@ -1,1 +1,0 @@
-bcftools view -i 'INFO/vepgnomAD_AF="." || INFO/vepgnomAD_AF < 0.001' /media/renewong/ReneWong/rare-disease-hackathon/VCF_pipeline/003-BCFToolsFiltering/results/SplitVEP_vep_WGS_EX2312012_HGWCNDSX7.PASS.vcf.gz -Oz -o /media/renewong/ReneWong/rare-disease-hackathon/VCF_pipeline/004-BCFTools_LowFreqVar/results/RareVars_vep_WGS_EX2312012_HGWCNDSX7.PASS.vcf.gz
