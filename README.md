@@ -153,7 +153,7 @@ The `recalling` workflow takes as input fastq files. It performs:
 1. QC
 2. Alignment
 3. Mark duplicates
-4. Haplotype calling
+4. Germline short variant calling
 5. NVScoring and tranche filtering
 6. Variant filtration
 
