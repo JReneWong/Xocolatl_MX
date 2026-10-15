@@ -13,12 +13,10 @@ images:
     arch: "x86_64"
 
 # --- Resources ---
-# Current: tuned for a 8GB laptop (setup/dev only, not full pipeline runs).
-# With larger resources, raise memory to ~24GiB and cpus to 6-8,
-# then `limactl stop hackathon && limactl start hackathon`.
+# Update if needed
 cpus: 8
 memory: "16GiB"
-disk: "20GiB"          # VM's own root disk (for the OS + apptainer + tool installs,
+disk: "32GiB"          # VM's own root disk (for the OS + apptainer + tool installs,
                         # NOT for the dataset — that stays on the mounted SSD)
 
 # Mount home

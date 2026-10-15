@@ -76,16 +76,16 @@ apptainer --version
 Run the command from the directory you want the image to be created at
 
 ```shell
-apptainer build container/hackathon.sif container/hackathon.def
+apptainer build container/env.sif container/env.def
+apptainer build container/vep.sif container/vep.def
 ```
 
-This builds a `.sif` image. Building can take a while and use a fair bit of RAM/CPU.
+This builds two `.sif` images. Building can take a while and use a fair bit of RAM/CPU.
 
-The image contains three micromamba environments. Environment dependencies are defined in the yaml files under `container/`.
+Environment dependencies are defined in the yaml files under `container/`.
 
-- **`/opt/env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline. Added to `PATH`.
-- **`/opt/r-env`** — R environment. Added to `PATH`.
-- **`/opt/vep-env`** - Ensembl VEP.
+- **`env.sif`** (`/opt/env`, from `env.yaml`) — Python 3.11 environment, alignment, variant calling, QC, pipeline
+- **`vep.sif`** (`/opt/vep-env`, from `vep-env.yaml`) - Ensembl VEP
 
 After building, capture the version manifest:
 
@@ -104,7 +104,6 @@ You do not have to create the environments as Nextflow will handle them as neede
 Environment dependencies are defined in the yaml files under `container/`.
 
 - **`env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline.
-- **`r-env`** — R environment.
 - **`vep-env`** - Ensembl VEP.
 
 </details>
@@ -132,7 +131,7 @@ This includes:
 
 ### 4c. Reference gnomAD
 
-We use a concatenated gnomAD v3.1.2 genomes vcf file that we store at `data/references/gnomad`.
+We use a concatenated gnomAD v3.1.2 genomes vcf file (from the vcf files available at https://gnomad.broadinstitute.org/downloads#v3) that we store at `data/references/gnomad`.
 
 Given the size of the vcf files, we recommend concatenating or filtering by mounting a Google Cloud Storage Bucket with GCSFuse.
 
