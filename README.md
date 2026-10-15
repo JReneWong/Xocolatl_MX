@@ -3,6 +3,75 @@
 Submission window:
 24 Aug 2026 – 24 Oct 2026.
 
+This repository provides a Nextflow pipeline for analysis of the Rare Disease, Real Kid Hackathon dataset.
+
+It is a two-step pipeline: first (optional) step is recalling from fastq files and outputs a vcf file.
+
+```mermaid
+---
+title: Recalling
+config:
+  flowchart:
+    curve: stepBefore
+---
+flowchart TB
+  
+  fastq.gz -- QC --> fastqc
+  fastq.gz -- alignment --> alignment[bwa mem]
+  fastqc --> multiqc
+  alignment --> samtools
+  samtools --> MarkDuplicates
+  MarkDuplicates --> HaplotypeCaller
+  HaplotypeCaller --> NVScoreVariants
+  NVScoreVariants --> VariantFiltration
+  
+  subgraph references
+    direction TB
+    refgenome[reference genome]
+    dbsnp
+    knownsites[known sites]
+  end
+
+  dbsnp -.-> HaplotypeCaller
+  refgenome -.-> HaplotypeCaller
+  refgenome -.-> alignment
+  refgenome -.-> NVScoreVariants
+  knownsites -.-> NVScoreVariants
+  refgenome -.-> VariantFiltration
+
+```
+
+Second step is performed on a vcf file, either the output of the first step or the challenge's provided pre-processed vcf file, and does annotation and filtering.
+
+```mermaid
+---
+title: VCF Processing
+config:
+  flowchart:
+    curve: stepBefore
+---
+flowchart TB
+  vcf.gz --> filterpass[bcftools filter 'PASS']
+  filterpass --> vep[VEP annotation]
+  vep --> splitvep[bcftools +split-vep]
+  splitvep --> lowfreqvar[bcftools filter to low freq vars]
+  lowfreqvar --> synonymous[bcftools filter to LoF and missense]
+  synonymous --> siftpolyphen[bcftools filter out 'tolerated' SIFT and 'benign' PolyPhen]
+  siftpolyphen --> highimpact[high impact vars]
+  siftpolyphen --> moderateimpact[moderate impact vars]
+
+  subgraph references
+    direction TB
+    refgenome[reference genome]
+    gnomad
+    clinvar
+  end
+
+  refgenome[reference genome] -.-> vep
+  gnomad -.-> vep
+  clinvar -.-> vep
+```
+
 ## Setup
 
 ### 1. Clone the repo
