@@ -11,6 +11,7 @@ It is a two-step pipeline: first (optional) step is recalling from fastq files a
 ---
 title: Recalling
 config:
+  htmlLabels: false
   flowchart:
     curve: stepBefore
 ---
@@ -47,6 +48,7 @@ Second step is performed on a vcf file, either the output of the first step or t
 ---
 title: VCF Processing
 config:
+  htmlLabels: false
   flowchart:
     curve: stepBefore
 ---
