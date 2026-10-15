@@ -1,0 +1,57 @@
+Bootstrap: docker
+From: ubuntu:22.04
+Stage: build
+
+%files
+    container/vep-env.yaml /opt/vep-env.yaml
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update && apt-get install -y --no-install-recommends \
+        curl ca-certificates bzip2 \
+    && rm -rf /var/lib/apt/lists/*
+
+    case "$(uname -m)" in
+        aarch64) MICROMAMBA_ARCH=linux-aarch64 ;;
+        x86_64)  MICROMAMBA_ARCH=linux-64 ;;
+        *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
+    esac
+    curl -Ls "https://micro.mamba.pm/api/micromamba/${MICROMAMBA_ARCH}/latest" | tar -xj -C /usr/local bin/micromamba
+
+    export MAMBA_ROOT_PREFIX=/opt/mamba
+    micromamba create -y -p /opt/vep-env -f /opt/vep-env.yaml
+    micromamba clean --all --yes
+
+    rm -rf /opt/vep-env/pkgs \
+           /opt/vep-env/share/doc /opt/vep-env/share/man /opt/vep-env/share/info
+    find /opt/vep-env -name '*.a' -delete
+
+    tar -C /opt -cf /opt/vep-env.tar vep-env
+
+
+Bootstrap: docker
+From: ubuntu:22.04
+Stage: final
+
+%files from build
+    /opt/vep-env.tar /opt/vep-env.tar
+
+%post
+    tar -C /opt -xf /opt/vep-env.tar && rm /opt/vep-env.tar
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates procps \
+    && rm -rf /var/lib/apt/lists/*
+
+%environment
+    export PATH=/opt/vep-env/bin:$PATH
+
+%runscript
+    echo "Ensembl VEP container. Tools: vep, filter_vep, variant_recoder, haplo"
+    exec "$@"
+
+%help
+    Build (from the repo root):
+        apptainer build container/vep.sif container/vep.def
+    Run a single command:
+        apptainer exec container/vep.sif vep --help

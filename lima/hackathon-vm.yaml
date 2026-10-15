@@ -1,8 +1,5 @@
 # Lima VM config for the MVA hackathon.
 # Docs: https://lima-vm.io/docs/config/
-#
-# On each laptop: edit the `location` under `mounts` to match where an external drive
-# is mounted on THIS machine (check with `ls /Volumes`).
 
 vmType: "vz"          # use Apple's native virtualization on Apple Silicon/macOS 13+
                        # (falls back fine to "qemu" if you hit issues — just change this line)
@@ -16,22 +13,21 @@ images:
     arch: "x86_64"
 
 # --- Resources ---
-# Current: tuned for a 8GB laptop (setup/dev only, not full pipeline runs).
-# With larger resources, raise memory to ~24GiB and cpus to 6-8,
-# then `limactl stop hackathon && limactl start hackathon`.
-cpus: 2
-memory: "4GiB"
-disk: "20GiB"          # VM's own root disk (for the OS + apptainer + tool installs,
+# Update if needed
+cpus: 8
+memory: "16GiB"
+disk: "32GiB"          # VM's own root disk (for the OS + apptainer + tool installs,
                         # NOT for the dataset — that stays on the mounted SSD)
 
+# Mount home
+mounts:
+  - location: "~"
+    writable: true
 # If using an external drive, uncomment the following lines and set the appropriate paths
-# mounts:
 #   - location: "/Volumes/SSD"
 #     mountPoint: "/mnt/ssd"
 #     writable: true
 
-# Keep the default home-directory mount too, off by default here to avoid
-# confusion about where the working repo lives (it should live on /mnt/ssd).
 mountType: "virtiofs"
 
 containerd:

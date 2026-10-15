@@ -5,9 +5,22 @@ Submission window:
 
 ## Setup
 
-We use an Apptainer image to run analysis on the provided dataset.
+### 1. Clone the repo
 
-Apptainer only runs on Linux, if you're using MacOS you can follow the next steps to setup a Linux VM.
+Clone the repo and move into its directory
+
+```bash
+git clone git@github.com:JReneWong/Xocolatl_MX.git
+cd Xocolatl_MX
+```
+
+### (Optional) Setup VM
+
+We use a Nextflow pipeline to run analysis on the provided dataset.
+
+The pipeline can either use Apptainer or micromamba/conda to handle environments.
+
+If using Apptainer, consider it only runs on Linux. If you're using MacOS you can follow the next steps to setup a Linux VM.
 
 <details>
 <summary>Create a Linux VM with MacOS</summary>
@@ -28,19 +41,28 @@ limactl start --name=hackathon lima/hackathon-vm.yaml
 limactl shell hackathon
 ```
 
-You should now be inside an Ubuntu VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
+You should now be inside an Ubuntu VM, perform the rest of the steps within the VM. If you configured an external drive it will be mounted at the path you defined in the yaml file.
 
-If you need to resize the VM you can do so by stopping the VM, editing the config yaml file and starting it again.
-
+If you need to resize the VM you can do so by editting the VM
+e.g.
 ```bash
-limactl stop hackathon
-# edit lima/hackathon-vm.yaml: raise cpus/memory
-limactl start hackathon
+limactl edit hackathon --cpus 4
 ```
 
 </details>
 
-## 2. Install Apptainer
+### 2. Install Nextflow
+
+Follow [seqera's docs on installing Nextflow](https://docs.seqera.io/nextflow/install). 
+
+### 3. Environment setup
+
+Use either Apptainer or micromamba/conda
+
+<details>
+<summary>Aptainer</summary>
+
+Install apptainer
 
 ```bash
 sudo apt update
@@ -51,169 +73,132 @@ sudo apt install -y apptainer
 apptainer --version
 ```
 
-## 3. Build the container image
-
-Run the command from the directory you want the image to be created
+Run the command from the directory you want the image to be created at
 
 ```shell
-apptainer build container/hackathon.sif container/hackathon.def
+apptainer build container/env.sif container/env.def
+apptainer build container/vep.sif container/vep.def
 ```
 
-This builds a `.sif` image. Building can take a while and use a fair bit of RAM/CPU.
+This builds two `.sif` images. Building can take a while and use a fair bit of RAM/CPU.
 
-### What's inside the image
+Environment dependencies are defined in the yaml files under `container/`.
 
-Two separate conda/micromamba environments (kept apart so a solver conflict
-or a future package change on one side never forces re-resolving the other),
-both added to `PATH`:
+- **`env.sif`** (`/opt/env`, from `env.yaml`) — Python 3.11 environment, alignment, variant calling, QC, pipeline
+- **`vep.sif`** (`/opt/vep-env`, from `vep-env.yaml`) - Ensembl VEP
 
-- **`/opt/env`** — alignment, variant calling, QC, pipeline: `fastqc`,
-  `multiqc`, `bwa`, `samtools`, `picard`, `bcftools`, `gatk4`, `ensembl-vep`,
-  `nextflow`, plus `python=3.11` with `pysam`/`pandas`/`numpy`/`matplotlib`.
-- **`/opt/r-env`** — `r-base`, `r-ggplot2`, `bioconductor-genomicranges`.
-
-Exact resolved versions aren't hand-pinned above (only `python=3.11` is) —
-conda's solver picks a mutually-compatible set at build time, and the real
-answer to "what version of X is installed" always lives in
-[`docs/software_versions.txt`](docs/software_versions.txt), generated fresh
-after every build (see below) rather than guessed ahead of time.
-
-Need a different version of something, or a new tool entirely? Edit the
-package list (and pin a version, e.g. `gatk4=4.5.0.0`) in
-`container/hackathon.def`, then rebuild — nothing is ever patched in place,
-so a bad rebuild can't leave you with a half-broken environment; the old
-`.sif` is untouched until the new build succeeds.
-
-After building, capture the version manifest into git-tracked docs:
+After building, capture the version manifest:
 
 ```bash
 bash scripts/record_versions.sh
 ```
+</details>
 
-## 4. Clone the git repo
+<details>
+<summary>Conda/Micromamba</summary>
 
-```bash
-git clone git@github.com:JReneWong/Xocolatl_MX.git
-```
+Follow either [micromamba](https://mamba.readthedocs.io/en/latest/installation/micromamba-installation.html)'s (recommended) or [conda](https://docs.conda.io/projects/conda/en/latest/user-guide/install/index.html)'s docs on installation.
 
-**Important:** never commit anything from `data/`, `.sif` images, or large intermediate files — see `.gitignore`.
+You do not have to create the environments as Nextflow will handle them as needed. You could however create them and then configure Nextflow to use existing environments, refer to their documentation for more information.
 
-## 5. Download the challenge data (do this when ready, it's ~85GB)
+Environment dependencies are defined in the yaml files under `container/`.
+
+- **`env`** — Python 3.11 environment, alignment, variant calling, QC, pipeline.
+- **`vep-env`** - Ensembl VEP.
+
+</details>
+
+### 4. Download the challenge data (~85GB)
 
 ```bash
 bash scripts/download_data.sh
 ```
 
-## 5b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
+### 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
 
-Everything here is pinned to **GRCh38** — confirm this matches the challenge
-dataset's build before running (check the HF dataset card/rules); dbSNP,
-ClinVar, and the VEP cache all have to agree with each other and with
-whatever the sequencing data was aligned to, or coordinates won't line up.
+Run the script to download references to `data/references`
 
 ```bash
 bash scripts/download_references.sh
 ```
 
-Genome + BWA index come from **Broad Institute's public GATK resource
-bundle**, not a local `bwa index` build — indexing the full genome needs
-~16-17GB RAM at peak, which no tuning fixes on an 8GB laptop. This bundle
-ships a pre-built index instead, so nothing memory-heavy runs locally at all.
-dbSNP is Broad's `dbsnp138` (much smaller than NCBI's full raw dump, and
-already contig-matched to the genome).
+This includes:
+- Genome + BWA index from **Broad Institute's public GATK resource bundle** (~3.2GB + 6.4GB)
+- dbSNP from **Broad Institute's public GATK resource bundle** (~1.6GB)
+- ClinVar from **NCBI** (184MB)
+- VEP cache from **ENSEMBL** (~26GB)
+- Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB + ~62MB)
 
-Pulls into `./references/`: genome + BWA index (~8.9GB), dbSNP (~1.6GB),
-ClinVar (<1GB), VEP offline cache (~20GB). ~30-35GB total, one-time, do it
-on wifi you trust.
+### 4c. Reference gnomAD
 
-**Contig naming — read this before annotating anything.** The genome/dbSNP
-above use `chr1`/`chr2`/`chrM` naming (Broad/UCSC convention). NCBI's ClinVar
-VCF uses plain `1`/`2`/`MT` (Ensembl/NCBI convention) — the script renames
-ClinVar's contigs to match after downloading. The VEP offline cache (step
-4) is Ensembl-based, i.e. **non**-chr-prefixed — if you feed it a VCF called
-from the chr-prefixed genome above, VEP won't match anything until you
-either strip the `chr` prefix first or pass VEP's `--synonyms` option. Not
-yet automated here; flag it when we get to the annotation step and we'll
-sort out whichever approach is cleaner then.
+We use a concatenated gnomAD v3.1.2 genomes vcf file (from the vcf files available at https://gnomad.broadinstitute.org/downloads#v3) that we store at `data/references/gnomad`.
 
-### Space budget on the 0.5TB SSD
+Given the size of the vcf files, we recommend concatenating or filtering by mounting a Google Cloud Storage Bucket with GCSFuse.
 
-| Item | Est. size |
-|---|---|
-| Challenge dataset | ~85GB |
-| Reference genome + BWA index (Broad bundle) | ~8.9GB |
-| dbSNP (Broad dbsnp138) | ~1.6GB |
-| ClinVar | <1GB |
-| VEP offline cache | ~20GB |
-| Container image (`.sif`) | ~5-8GB |
-| **Baseline total** | **~120GB** |
-| Nextflow `work/` during pipeline runs | variable, can add 100GB+ |
+If you use a different gnomAD vcf, make sure to update the path in the `nextflow.config` file and potentially update the `lowfreqvar` process in the pipeline.
 
-Point Nextflow's work directory at the SSD (default is fine if you launch
-`nextflow run` from inside the project root on `/mnt/ssd`) and run
-`nextflow clean -f` after confirming a run succeeded, so intermediate files
-don't quietly eat the remaining headroom.
+### 5. Run the pipeline
 
+The Nextflow pipeline's configuration and files live under `pipeline/`
 
-## Pipeline modules
+Default configuration and profiles are defined in `pipeline/nextflow.config`, you can modify them if needed.
 
-Analysis lives in two sibling trees, one numbered module per step each:
+The configuration provides three different profiles to run the pipeline, `apptainer` to use a container image, and `micromamba` and `conda` to use virtual environments.
 
-```
-Re-calling_Pipeline/       # variant calling redone from scratch, raw FASTQs onward
-├── 001_FastQC/
-│   ├── data -> ../../InitialData     # symlink to this module's input
-│   ├── bin/run_fastqc.sh             # the only thing you run
-│   └── results/                      # outputs + one manifest per command
-├── 002_Alignment/
-├── 003_MarkDuplicates/
-└── ...
+Consider relative paths of files used by the pipeline are relative to the launch directory. We setup and recommend running the pipeline from the repo's root directory.
 
-VCF_pipeline/               # analysis of the organizer-provided, pre-called VCF
-├── 001_FilterVCF/
-├── 002-VEPAnnotation/
-└── ...
+The pipeline contains two main workflows: `recalling` and `vcf`.
+
+The `recalling` workflow takes as input fastq files. It performs:
+1. QC
+2. Alignment
+3. Mark duplicates
+4. Haplotype calling
+5. NVScoring and tranche filtering
+6. Variant filtration
+
+The input for the `recalling` workflow is a samplesheet as defined in `data/fastq/samplesheet.template.csv`. Create a `data/fastq/samplesheet.csv` file defining all input fastq files. The `lane` value is optional, however the full id for each pair of fastq's is composed of the `id` and `lane` values, so if there is no `lane` value, make sure all `id`s are unique.
+
+Run the workflow from the repo's root directory using your desired `-profile`. For example,
+```sh
+nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
-Each module has exactly three folders:
-- **`data/`** — a symlink to this module's input (raw data for module 001,
-  the previous module's `results/` for most later ones — but not always:
-  e.g. trimming acts on the raw reads, not on FastQC's reports, so its
-  `data/` symlinks past 001 straight to `InitialData/`. Check what a module
-  actually needs before assuming "previous module's output").
-- **`bin/`** — the module's script(s). One `run_*.sh` entrypoint per
-  module, sourcing `common/manifest.sh`.
-- **`results/`** — outputs, plus a `manifest_<timestamp>.yaml` per command
-  actually executed (command, params, container + its sha256, resources,
-  git commit, inputs, outputs, exit code) via the shared `run_and_log`
-  helper in `common/manifest.sh`. `manifest_latest.yaml` symlinks to the
-  most recent one. Small reports (FastQC/MultiQC html) and every manifest
-  are git-tracked; heavy formats (fastq/bam/vcf/etc.) are not — see
-  `.gitignore`.
+The `vcf` workflow takes as input vcf files. It performs:
+1. Filtering
+2. VEP annotation
+3. Filtering to low frequency variants
+4. Filtering to lof+missense variants
+5. Filtering by SIFT and PolyPhen
+6. Subset to high impact and moderate impact
 
-Run a module from the project root, inside the VM:
-```bash
-bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
-# override defaults: CPUS=6 MEM=20GiB bash Re-calling_Pipeline/001_FastQC/bin/run_fastqc.sh
+We run the vcf workflow with both the provided dataset's vcf file, and our recalling output vcf.
+
+Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files (like the recalling workflow output if run).
+
+Run the workflow from the repo's root directory using your desired `-profile`. For example,
+```sh
+nextflow run pipeline/main.nf --flow recalling -profile conda
 ```
 
-`scripts/` (one-time environment/data setup — build the container, pull the
-dataset/references) is separate from `Re-calling_Pipeline/`/`VCF_pipeline/`
-(the actual analysis steps) on purpose: the former runs once per laptop,
-the latter is what gets re-run, extended, and eventually ported to
-Nextflow.
+**Note** the vep package installed with conda/micromamba doesn't work on MacOS as of 2026-09 (https://github.com/bioconda/bioconda-recipes/issues/61335). You will need to run in Linux or use a VM instead.
 
-**Known gap:** `container/hackathon.def` has no read trimmer (no
-`fastp`/`trimmomatic`/`cutadapt`) — only decide whether 002_Trimming is
-needed after reading 001's MultiQC report; if trimming turns out to be
-required, add `fastp` to the def file and rebuild before writing that
-module.
 
-## If the SSD mount misbehaves inside the VM
+#### Phasing workflows
+We include additional workflows to perform phasing using shapeit5 or whatshap.
 
-Lima shares the host directory via virtiofs, which usually handles Apptainer
-sandbox/build operations fine. If you hit permission or symlink errors during
-`apptainer build`, the fallback is to create a large raw disk image *file* on
-the SSD (e.g. 250GB) and attach it to the Lima VM as a second, ext4-formatted
-virtual disk — full native Linux filesystem semantics, still physically
-stored on the SSD. Flag it here if we hit this and we'll set it up.
+##### shapeit
+Download a reference panel from https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/
+
+The tools is available using either the apptainer or docker profiles. Build the image given the `.def` or `.Dockerfile` files at `data/container`. If using MacOS, build the docker image with `--platform linux/amd64`.
+
+Populate a `data/phasing/samplesheet.csv` file (`id`, `vcf`, `panel` and `region` information) and run the workflow as
+```sh
+nextflow run pipeline/phasing.nf --flow shapeit -profile docker
+```
+
+##### whatshap
+Populate a `data/phasing/samplesheet.csv` file (`id`, `vcf`, `bam` and `region` information) and run the workflow as
+```sh
+nextflow run pipeline/phasing.nf --flow shapeit -profile conda
+```
