@@ -155,7 +155,7 @@ The `recalling` workflow takes as input fastq files. It performs:
 3. Mark duplicates
 4. Germline short variant calling
 5. NVScoring and tranche filtering
-6. Variant filtration
+6. Variant filtering
 
 The input for the `recalling` workflow is a samplesheet as defined in `data/fastq/samplesheet.template.csv`. Create a `data/fastq/samplesheet.csv` file defining all input fastq files. The `lane` value is optional, however the full id for each pair of fastq's is composed of the `id` and `lane` values, so if there is no `lane` value, make sure all `id`s are unique.
 
@@ -166,11 +166,11 @@ nextflow run pipeline/main.nf --flow recalling -profile conda
 
 The `vcf` workflow takes as input vcf files. It performs:
 1. Filtering
-2. VEP annotation
+2. Consequence and allele frequency annotation
 3. Filtering to low frequency variants
-4. Filtering to lof+missense variants
-5. Filtering by SIFT and PolyPhen
-6. Subset to high impact and moderate impact
+4. Filtering to non-synonymous variants
+5. Filtering by pathogenicity prediction scores
+6. Subset to high impact and moderate impact variants
 
 We run the vcf workflow with both the provided dataset's vcf file, and our recalling output vcf.
 
@@ -185,7 +185,7 @@ nextflow run pipeline/main.nf --flow recalling -profile conda
 
 
 #### Phasing workflows
-We include additional workflows to perform phasing using shapeit5 or whatshap.
+We include additional workflows to perform phasing using shapeit5 or whatshap. Phasing was attempted in this dataset but did not provide useful information regarding the variants of interest. We include them as they may be used in other datasets to assess if two variants are in cis or trans, and therefore affecting one or two copies of a gene. 
 
 ##### shapeit
 Download a reference panel from https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000G_2504_high_coverage/working/20220422_3202_phased_SNV_INDEL_SV/
