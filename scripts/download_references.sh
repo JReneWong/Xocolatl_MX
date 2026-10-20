@@ -91,13 +91,6 @@ exomiser.hg38.data-version=2406
 exomiser.phenotype.data-version=2406
 logging.level.com.zaxxer.hikari=ERROR
 EOF
-# Create Exomiser output options file
-cat > "$EXOMISER_DIR/exomiser-cli-15.1.0/output-options.yaml" <<'EOF'
-outputContributingVariantsOnly: true
-numGenes: 20
-outputFormats: [HTML, TSV_GENE, TSV_VARIANT, VCF]
-outputDirectory: .
-EOF
 # ~22GB
 EXOMISER_HG38="$EXOMISER_DIR/2406_hg38.zip"
 download "https://data.monarchinitiative.org/exomiser/latest/2406_hg38.zip" "$EXOMISER_HG38"

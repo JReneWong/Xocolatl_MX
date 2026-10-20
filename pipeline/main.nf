@@ -430,18 +430,22 @@ process rank_variants {
     path(exomiser_config)
 
     output:
-    tuple val(id), path("*.vcf.gz{,.tbi}")
-    path("*.tsv")
+    tuple val(id), path("*.jsonl")
     path("*.html")
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    output_options_json = "output-options.json"
+    output_options = groovy.json.JsonOutput.toJson(params.exomiser_output_options)
     """
+    echo '${output_options}' > ${output_options_json}
+
     java -jar ${exomiser_dir}/exomiser-cli-15.1.0.jar analyse \
         --sample ${phenopacket_yaml} \
         --vcf ${vcf_file} \
         --assembly hg38 \
-        --output ${exomiser_dir}/${params.exomiser_output_options}
+        --output ${output_options_json} \
+        --output-directory .
     """
 }
 

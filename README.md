@@ -76,6 +76,8 @@ flowchart TB
   clinvar -.-> vep
 ```
 
+We include a python script (`scripts/exomiser_variant_pairs.py`) to format the final pipeline output for submission.
+
 ## Setup
 
 ### 1. Clone the repo
