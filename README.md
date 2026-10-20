@@ -53,7 +53,7 @@ config:
     curve: stepBefore
 ---
 flowchart TB
-  vcf.gz --> filterpass[bcftools filter 'PASS']
+  vcf.gz --> filterpass[bcftools filter 'PASS' and DP>10]
   filterpass --> vep[VEP annotation]
   vep --> splitvep[bcftools +split-vep]
   splitvep --> lowfreqvar[bcftools filter to low freq vars]
