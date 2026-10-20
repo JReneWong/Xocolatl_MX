@@ -2,7 +2,9 @@
 Create hackathon submission csv file
 
 Usage:
-    python exomiser_variant_pairs.py <proband_id> <exomiser_jsonl> <output_csv>
+    python exomiser_variant_pairs.py <proband_id> <disease_id> <exomiser_jsonl> <output_csv>
+
+<disease_id> is a disease ID, e.g. OMIM:000000 or ORPHA:000
 """
 
 import csv
@@ -40,7 +42,19 @@ def pick_variants(gene):
     best = max(scored, key=lambda gs: gs["combinedScore"])
     return best, [to_variant(best["contributingVariants"][0])]
 
-def read_results(exomiser_jsonl):
+def disease_score(gene, disease_id):
+    """Best phenotypeEvidence score for the given disease ID, else 0."""
+    scores = [0.0]
+    for priority in gene.get("priorityResults", {}).values():
+        for evidence in priority.get("phenotypeEvidence") or []:
+            disease = evidence.get("model", {}).get("disease")
+            if not disease:
+                continue
+            if disease.get("diseaseId", "").lower() == disease_id:
+                scores.append(evidence["score"])
+    return max(scores)
+
+def read_results(exomiser_jsonl, disease_id):
     results = {}
     with open(exomiser_jsonl) as fh:
         for line in fh:
@@ -50,14 +64,15 @@ def read_results(exomiser_jsonl):
                 continue
             key = (gene["geneSymbol"], gene_score["modeOfInheritance"])
             results[key] = {
-                "epcr": gene_score["combinedScore"],
+                "epcr": disease_score(gene, disease_id),
                 "variants": variants,
             }
     return results
 
-proband_id, exomiser_jsonl, output_csv = sys.argv[1:]
+proband_id, disease_id, exomiser_jsonl, output_csv = sys.argv[1:]
+disease_id = disease_id.strip().lower()
 
-results = read_results(exomiser_jsonl)
+results = read_results(exomiser_jsonl, disease_id)
 
 with open(output_csv, "w", newline="") as fh:
     writer = csv.writer(fh)
@@ -72,5 +87,8 @@ with open(output_csv, "w", newline="") as fh:
             )
         first = variants[0]
         second = variants[1] if len(variants) > 1 else [""] * 4
-        
-        writer.writerow([proband_id] + first + second + [f"{result['epcr']:.4f}", "", ""])
+        finding_type = "primary" if result["epcr"] > 0 else "secondary"
+        # notes is left empty to be filled in manually
+        writer.writerow(
+            [proband_id] + first + second + [f"{result['epcr']:.4f}", finding_type, ""]
+        )
