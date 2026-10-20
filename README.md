@@ -62,6 +62,7 @@ flowchart TB
   siftpolyphenclinvar --> highimpact[high impact vars]
   siftpolyphenclinvar --> moderateimpact[moderate impact vars]
   siftpolyphenclinvar --> exomiser[exomiser var ranking]
+  phenopacket --> exomiser
 
   subgraph references
     direction TB
