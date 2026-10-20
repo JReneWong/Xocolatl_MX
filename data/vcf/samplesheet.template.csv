@@ -1,2 +1,2 @@
-id,vcf,index
-sample_01,/path/to/sample_01.vcf.gz,/path/to/sample_01.vcf.gz.tbi
+id,vcf,index,phenopacket
+sample_01,/path/to/sample_01.vcf.gz,/path/to/sample_01.vcf.gz.tbi,/path/to/sample_01.yaml

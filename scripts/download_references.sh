@@ -20,7 +20,7 @@ function download {
 }
 
 REF_DIR="./data/references"
-mkdir -p "$REF_DIR"/{genome,dbsnp,clinvar,vep_cache,known_sites}
+mkdir -p "$REF_DIR"/{genome,dbsnp,clinvar,vep_cache,known_sites,exomiser}
 
 # Download genome
 # 3.2GB + 488KB + 20KB + 455KB + 3.22GB + 804.3MB + 1.61GB
@@ -75,5 +75,36 @@ echo "Downloading HapMap VCF"
 HAPMAP_VCF="$REF_DIR/known_sites/HapMap_3.3.hg38.vcf.gz"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/hapmap_3.3.hg38.vcf.gz" "$HAPMAP_VCF"
 download "https://storage.googleapis.com/gcp-public-data--broad-references/hg38/v0/hapmap_3.3.hg38.vcf.gz.tbi" "$HAPMAP_VCF.tbi"
+
+# Download exomiser data
+echo "Downloading Exomiser CLI and data"
+EXOMISER_DIR="$REF_DIR/exomiser"
+EXOMISER_CLI="$EXOMISER_DIR/exomiser-cli-15.1.0-distribution.zip"
+download "https://github.com/exomiser/Exomiser/releases/download/15.1.0/exomiser-cli-15.1.0-distribution.zip" "$EXOMISER_DIR/exomiser-cli-15.1.0-distribution.zip"
+unzip -o "$EXOMISER_CLI" -d "$EXOMISER_DIR"
+mkdir -p "$EXOMISER_DIR/exomiser-cli-15.1.0/data"
+# Overwrite the default application.properties with our data versions
+# On parent exomiser dir as will be executed from there
+cat > "$EXOMISER_DIR/application.properties" <<'EOF'
+exomiser.data-directory=./exomiser-cli-15.1.0/data
+exomiser.hg38.data-version=2406
+exomiser.phenotype.data-version=2406
+logging.level.com.zaxxer.hikari=ERROR
+EOF
+# Create Exomiser output options file
+cat > "$EXOMISER_DIR/exomiser-cli-15.1.0/output-options.yaml" <<'EOF'
+outputContributingVariantsOnly: true
+numGenes: 20
+outputFormats: [HTML, TSV_GENE, TSV_VARIANT, VCF]
+outputDirectory: .
+EOF
+# ~22GB
+EXOMISER_HG38="$EXOMISER_DIR/2406_hg38.zip"
+download "https://data.monarchinitiative.org/exomiser/latest/2406_hg38.zip" "$EXOMISER_HG38"
+unzip -o "$EXOMISER_HG38" -d "$EXOMISER_DIR/exomiser-cli-15.1.0/data"
+# ~6GB
+EXOMISER_PHENOTYPE="$EXOMISER_DIR/2406_phenotype.zip"
+download "https://data.monarchinitiative.org/exomiser/latest/2406_phenotype.zip" "$EXOMISER_PHENOTYPE"
+unzip -o "$EXOMISER_PHENOTYPE" -d "$EXOMISER_DIR/exomiser-cli-15.1.0/data"
 
 echo "Done"

@@ -149,6 +149,7 @@ Run the command from the directory you want the image to be created at
 ```shell
 apptainer build container/env.sif container/env.def
 apptainer build container/vep.sif container/vep.def
+apptainer build container/exomiser.sif container/exomiser.def
 ```
 
 This builds two `.sif` images. Building can take a while and use a fair bit of RAM/CPU.

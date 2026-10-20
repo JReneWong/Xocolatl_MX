@@ -1,0 +1,14 @@
+Bootstrap: docker
+From: eclipse-temurin:21-jre
+
+%post
+    apt-get update && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/*
+
+%runscript
+    exec "$@"
+
+%help
+    Java 21 runtime for Exomiser (rank_variants).
+    Build (from the repo root):
+        apptainer build container/exomiser.sif container/exomiser.def

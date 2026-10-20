@@ -220,7 +220,8 @@ process vcf_filter {
     vcf_out = "filtered-${id}.PASS.vcf.gz"
     """
     bcftools filter -i 'FILTER="PASS"' \
-        --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
+        --threads ${task.cpus} -Ou '${vcf_file}' \
+        | bcftools filter -e 'INFO/DP<=10' --threads ${task.cpus} -Oz -o '${vcf_out}' 
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
 }
@@ -341,7 +342,7 @@ process synonymous_mutations {
     """
 }
 
-process sift_polyphen {
+process sift_polyphen_clinvar {
     tag "${id}"
 
     publishDir "${params.outdir}/vep", mode: "copy"
@@ -354,9 +355,9 @@ process sift_polyphen {
 
     script:
     vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
-    vcf_out = "sift_polyphen_filtered-${id}.PASS.vcf.gz"
+    vcf_out = "sift_polyphen_clinvar_filtered-${id}.PASS.vcf.gz"
     """
-    bcftools view -e 'INFO/vepSIFT ~ "tolerated" || INFO/vepPolyPhen = "benign"' \
+    bcftools view -e 'INFO/vepSIFT ~ "tolerated" || INFO/vepPolyPhen = "benign" || INFO/vepClinVar_CLNSIG ~ "Benign" || INFO/vepClinVar_CLNSIG ~ "Likely_benign"' \
         --threads ${task.cpus} -Oz -o '${vcf_out}' '${vcf_file}'
     bcftools index -t --threads ${task.cpus} '${vcf_out}'
     """
@@ -418,6 +419,33 @@ process moderate_impact {
     """
 }
 
+process rank_variants {
+    tag "${id}"
+
+    publishDir "${params.outdir}/exomiser", mode: "copy"
+
+    input:
+    tuple val(id), path(vcf), path(phenopacket_yaml)
+    path(exomiser_dir)
+    path(exomiser_config)
+
+    output:
+    tuple val(id), path("*.vcf.gz{,.tbi}")
+    path("*.tsv")
+    path("*.html")
+
+    script:
+    vcf_file = vcf.find { it.name.endsWith('.vcf.gz') }
+    """
+    java -jar ${exomiser_dir}/exomiser-cli-15.1.0.jar analyse \
+        --sample ${phenopacket_yaml} \
+        --vcf ${vcf_file} \
+        --assembly hg38 \
+        --output ${exomiser_dir}/${params.exomiser_output_options}
+    """
+}
+
+
 workflow qc {
     Channel.of(file(params.fastq_samplesheet))
         .flatMap { csv -> csv.splitCsv(header: true) }
@@ -470,8 +498,15 @@ workflow recalling{
 workflow vcf {
     Channel.of(file(params.vcf_samplesheet))
         .flatMap { csv -> csv.splitCsv(header: true) }
+        .set { samples_ch }
+    
+    samples_ch
         .map { row -> [row.id, [file(row.vcf), file(row.index)]] }
         .set { vcf_ch }
+    
+    samples_ch
+        .map { row -> [row.id, file(row.phenopacket)] }
+        .set { phenopacket_ch }
     
     vcf_filter(vcf_ch)
     vep_annotation(
@@ -485,13 +520,19 @@ workflow vcf {
     split_vep(vep_annotation.out)
     lowfreqvar(split_vep.out)
     synonymous_mutations(lowfreqvar.out)
-    sift_polyphen(synonymous_mutations.out)
+    sift_polyphen_clinvar(synonymous_mutations.out)
 
-    high_impact(sift_polyphen.out)
-    moderate_impact(sift_polyphen.out)
+    high_impact(sift_polyphen_clinvar.out)
+    moderate_impact(sift_polyphen_clinvar.out)
 
     high_impact.out[0].mix(moderate_impact.out[0])
         .set { tiers_ch }
+
+    rank_variants(
+        sift_polyphen_clinvar.out.join(phenopacket_ch),
+        file(params.exomiser_dir),
+        file(params.exomiser_config)
+    )
 }
 
 workflow {
