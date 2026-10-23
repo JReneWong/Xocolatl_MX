@@ -42,7 +42,7 @@ flowchart TB
 
 ```
 
-Second step is performed on a vcf file, either the output of the first step or the challenge's provided pre-processed vcf file, and does annotation and filtering.
+Second step is performed on a vcf file, either the output of the first step or the challenge's provided pre-processed vcf file, and does annotation, filtering and ranking based on phenotypes.
 
 ```mermaid
 ---
@@ -53,14 +53,16 @@ config:
     curve: stepBefore
 ---
 flowchart TB
-  vcf.gz --> filterpass[bcftools filter 'PASS']
+  vcf.gz --> filterpass[bcftools filter 'PASS' and DP>10]
   filterpass --> vep[VEP annotation]
   vep --> splitvep[bcftools +split-vep]
   splitvep --> lowfreqvar[bcftools filter to low freq vars]
   lowfreqvar --> synonymous[bcftools filter to LoF and missense]
-  synonymous --> siftpolyphen[bcftools filter out 'tolerated' SIFT and 'benign' PolyPhen]
-  siftpolyphen --> highimpact[high impact vars]
-  siftpolyphen --> moderateimpact[moderate impact vars]
+  synonymous --> siftpolyphenclinvar[bcftools filter out 'tolerated' SIFT, 'benign' PolyPhen and benign ClinVar]
+  siftpolyphenclinvar --> highimpact[high impact vars]
+  siftpolyphenclinvar --> moderateimpact[moderate impact vars]
+  siftpolyphenclinvar --> exomiser[exomiser var ranking]
+  phenopacket --> exomiser
 
   subgraph references
     direction TB
@@ -73,6 +75,8 @@ flowchart TB
   gnomad -.-> vep
   clinvar -.-> vep
 ```
+
+We include a python script (`scripts/exomiser_variant_pairs.py`) to format the final pipeline output for submission.
 
 ## Setup
 
@@ -149,6 +153,7 @@ Run the command from the directory you want the image to be created at
 ```shell
 apptainer build container/env.sif container/env.def
 apptainer build container/vep.sif container/vep.def
+apptainer build container/exomiser.sif container/exomiser.def
 ```
 
 This builds two `.sif` images. Building can take a while and use a fair bit of RAM/CPU.
@@ -185,7 +190,7 @@ Environment dependencies are defined in the yaml files under `container/`.
 bash scripts/download_data.sh
 ```
 
-### 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache)
+### 4b. Download reference data (genome, dbSNP, ClinVar, VEP cache, exomiser cli and data)
 
 Run the script to download references to `data/references`
 
@@ -199,6 +204,7 @@ This includes:
 - ClinVar from **NCBI** (184MB)
 - VEP cache from **ENSEMBL** (~26GB)
 - Known sites resources from **Broad Institute's public GATK resource bundle** (~63MB + ~22MB + ~62MB)
+- Exomiser CLI + data from **Exomiser GitHub** (~30GB)
 
 ### 4c. Reference gnomAD
 
@@ -242,10 +248,11 @@ The `vcf` workflow takes as input vcf files. It performs:
 4. Filtering to non-synonymous variants
 5. Filtering by pathogenicity prediction scores
 6. Subset to high impact and moderate impact variants
+7. Variant ranking given phenotypes
 
 We run the vcf workflow with both the provided dataset's vcf file, and our recalling output vcf.
 
-Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files (like the recalling workflow output if run).
+Similar to the `recalling` workflow, the input for the `vcf` workflow is a samplesheet as defined in `data/vcf/samplesheet.template.csv`. Create a `data/vcf/samplesheet.csv` file defining all input vcf files (like the recalling workflow output if run). Also create phenopacket yaml files as defined in `data/phenopacket/phenopacket.template.csv` for the input vcf files. If phenotype data is unavailable comment out the `rank_variants` process from the workflow.
 
 Run the workflow from the repo's root directory using your desired `-profile`. For example,
 ```sh

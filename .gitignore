@@ -9,6 +9,9 @@ data/fastq/*
 !data/vcf
 data/vcf/*
 !data/vcf/samplesheet.template.csv
+!data/phenopacket
+data/phenopacket/*
+!data/phenopacket/phenopacket.template.yaml
 !data/phasing
 data/phasing/*
 !data/phasing/samplesheet.template.csv
@@ -62,3 +65,5 @@ Thumbs.db
 .nextflow/
 .nextflow.log*
 work/
+
+*.duckdb
