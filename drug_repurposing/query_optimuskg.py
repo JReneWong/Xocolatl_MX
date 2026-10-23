@@ -1,5 +1,8 @@
 """
 Query OptimusKG by gene
+
+Usage:
+    python query_optimuskg.py <gene_id> [--db-dir <db_dir>] [--report <report_path>] [--phenotypes <phenotypes_file>]
 """
 
 import argparse
