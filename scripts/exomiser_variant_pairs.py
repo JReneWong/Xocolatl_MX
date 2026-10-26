@@ -21,8 +21,13 @@ HEADER = [
 
 RECESSIVE_MODES = {"AUTOSOMAL_RECESSIVE", "X_RECESSIVE"}
 
+def format_contig(contig):
+    if not contig.startswith("chr"):
+        contig = "chr" + contig
+    return contig
+
 def to_variant(v):
-    return [v["contigName"], str(v["start"]), v["ref"], v["alt"]]
+    return [format_contig(v["contigName"]), str(v["start"]), v["ref"], v["alt"]]
 
 def pick_variants(gene):
     """Return (gene_score, variants) for a gene's row.
